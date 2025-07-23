@@ -1,0 +1,84 @@
+; screen
+
+C_VADDR 	=: 104000
+C_SCRWID 	=: 64.
+
+TILES_DX	=: 32.
+TILES_DY	=: 18.
+
+Byte2Word00	=: 40000
+Byte2Word01	=: 41000
+Byte2Word02	=: 42000
+Byte2Word03	=: 43000
+Byte2Word10	=: 44000
+Byte2Word11	=: 45000
+Byte2Word12	=: 46000
+Byte2Word13	=: 47000
+Byte2Word20	=: 50000
+Byte2Word21	=: 51000
+Byte2Word22	=: 52000
+Byte2Word23	=: 53000
+Byte2Word30	=: 54000
+Byte2Word31	=: 55000
+Byte2Word32	=: 56000
+Byte2Word33	=: 57000
+
+; keys
+
+C_KEY_RIGHT	=: 31
+C_KEY_LEFT	=: 10
+C_KEY_UP	=: 32
+C_KEY_DOWN	=: 33
+C_KEY_SPACE	=: 40
+
+P_KEY_LEFT	=: 002
+P_KEY_RIGHT	=: 001
+P_KEY_UP	=: 010
+P_KEY_DOWN	=: 004
+P_KEY_FIRE	=: 020
+
+; memory
+
+; 177716(W) RAM banks 
+; [xAAA1BBBxxxCCxDD]
+; AAA - RAM bank for 40000-100000, BBB - RAM bank for 100000-140000, CC, DD - allow ROM banks at 100000
+; 0->110, 1->000, 2->010, 3->011, 4->100, 5->001 (screen buf 0), 6->111 (screen buf 1), 7->101
+;                 xAAA1BBBxxxCCxDD
+C_RAM_BANKS11 =: ^B0000100000000000
+C_RAM_BANKS12 =: ^B0000101000000000
+C_RAM_BANKS13 =: ^B0000101100000000
+C_RAM_BANKS14 =: ^B0000110000000000
+C_RAM_BANKS15 =: ^B0000100100000000
+C_RAM_BANKS16 =: ^B0000111100000000
+C_RAM_BANKS24 =: ^B0010110000000000
+C_RAM_BANKS35 =: ^B0011100100000000
+C_RAM_BANKS45 =: ^B0100100100000000
+C_RAM_BANKS54 =: ^B0001110000000000
+C_RAM_BANKS56 =: ^B0001111100000000
+
+
+; some macroses
+
+	.macro	push	RR
+	mov	RR, -(SP)
+	.endm
+
+	.macro	pop	RR
+	mov	(SP)+, RR
+	.endm
+
+	.macro	nop1
+	nop
+	.endm
+
+	.macro	nop2
+	nop
+	nop
+	.endm
+
+	.macro	nop3
+	nop
+	nop
+	nop
+	.endm
+

@@ -1,0 +1,5221 @@
+	.title	SABOT2
+	.enabl	LC, AMA
+	.asect
+	.=1000
+
+; Special comments-warnings in the code:
+; !!MUT-CMD!! - the command mutable, means other code changes it
+; !!MUT-ARG!! - the command argument is mutable
+; !!MUT-2ndARG!! - the command 2nd argument is mutable
+
+@include common.mac
+
+START:	mov	#1000, SP
+
+	; test for BK0011M
+	cmpb	@#177717, #300
+	beq	10$
+	mov	#MsgEr0, R0
+	br	GameError
+
+10$:	; hello kitty
+	mov	#MsgLoa, R0
+	call	PrintEmt
+	; load bank 1
+	mov	#C_RAM_BANKS14, @#177716
+	call	LoadOver
+	; load bank 2
+	mov	#C_RAM_BANKS24, @#177716
+	incb	OvlFnm+9.
+	call	LoadOver
+
+	; prepare
+	mtps	#200
+	mov	@#004, -(SP)			; save to be replaced interrupt vectors
+	mov	@#060, -(SP)
+	mov	@#274, -(SP)
+	mov	@#100, -(SP)
+	mov	@#102, -(SP)
+	call	PrepareBank3
+	; movb	#12., @#177663			; screen 5, palette 12, vsync on
+	clr	@#177662			; screen 5, palette 0, vsync on
+	mov	#1330, @#177664			; reset screen scroll (if any)	
+	mov	#VsyInt, @#100			; vsync interrupt
+	mov	#200, @#102			;
+	mov	#KeyInt, @#60			; keys (main) interrupt
+	mov	#KeyFuncInt, @#274		; keys (func) interrupt
+	mov	#CoreStart, @#4			; STOP key interrupt
+	clr	@#177660			; allow keyboard interrupts
+
+	; start core
+	mov	#C_RAM_BANKS12, @#177716
+	mtps	#0
+	jmp	CoreStart
+
+
+; error and halt
+ReadError:
+	mov	#MsgEr1, R0
+GameError:
+	mov	#C_RAM_BANKS54, @#177716
+	mtps	#0
+	call	PrintEmt
+	wait	
+	halt
+
+; load overlay file to 40000
+LoadOver:
+	movb	#3, @#320
+	mov	#40000, @#322
+	call	CopyName
+	mov	#320, R1
+	emt	36
+	; check for error
+	tstb	@#321
+	bne	ReadError
+	return
+
+; copy file name for emt
+CopyName:
+	mov	#OvlFnm, R0
+	mov	#326, R1
+	mov	#16., R2
+	movb	(R0)+, (R1)+
+	sob	R2, .-2
+	return
+
+; print something with emt's
+; R0 - msg addr
+PrintEmt:
+	cmp	@#100000, #167
+	beq	10$
+	cmpb	@#177717, #300
+	bne	10$
+	emt	65
+	return
+10$:	mov	R1, -(SP)
+	mov	R2, -(SP)
+	mov	R0, R1
+	clr	R2
+	emt	20
+	mov	(SP)+, R1
+	mov	(SP)+, R2
+	return
+
+MsgEr0:	.asciz	"This game is for BK0011M"
+MsgEr1:	.asciz	"Unable to load game files"
+MsgLoa:	.asciz	"Loading ..."
+OvlFnm:	.ascii	"sabot2.ov1      "
+	.even
+
+
+; //////////////////////////////////////////////////////////////////////////////
+; // Data
+; //////////////////////////////////////////////////////////////////////////////
+
+PpuKeys:	.word	0
+FramesCount:	.word	0
+
+NinaOnFire:	.word	0
+NinaCanShock:	.word	0
+
+Byte2WordTbl:	.word	Byte2Word00, Byte2Word01, Byte2Word02, Byte2Word03
+		.word	Byte2Word10, Byte2Word11, Byte2Word12, Byte2Word13
+		.word	Byte2Word20, Byte2Word21, Byte2Word22, Byte2Word23
+		.word	Byte2Word30, Byte2Word31, Byte2Word32, Byte2Word33
+
+TileBuf:	.blkb	10.			; buffer for tile: [0..7 data bytes] [zx attr word]
+
+K01602:		.word	0
+
+K01604:		.byte	0			; temp
+K01605:		.byte	0
+K01606:		.byte	0
+K01607:		.byte	0
+
+K01610:		.byte	0			; offset value in room marker processing
+K01611:		.byte	0
+
+; PANMS - Indicator signs
+StrHeld:	.ascii	/HELD/
+		.ascii	/ FPS /
+		.ascii	/NEAR/
+StrMoney:	.ascii	/ PAY $0000000 /
+		.even
+
+; level 9 pointer and data
+L9Ptr:		.word	0
+LData:		.byte	0, 016, 001, 356, 377	; 0, tapes needed, disarm missile, fence<>377, bike==377
+		.even
+
+FontData:
+	.byte	000,000,000,000,000,000,000,000,000,154,222,202,202,104,050,020
+	.byte	120,120,000,000,000,000,000,000,012,012,000,000,000,000,000,000
+	.byte	000,020,174,024,174,120,174,020,377,377,173,377,267,375,377,000
+	.byte	377,175,337,377,173,377,377,000,000,000,020,000,000,020,000,000
+	.byte	000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000
+	.byte	000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000
+	.byte	000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000
+	.byte	000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000
+	.byte	000,176,102,102,142,142,176,000,000,020,020,020,030,030,030,000
+	.byte	000,176,100,100,176,006,176,000,000,176,100,170,140,140,176,000
+	.byte	000,102,102,176,140,140,140,000,000,176,002,176,140,140,176,000
+	.byte	000,176,002,176,142,142,176,000,000,176,100,100,140,140,140,000
+	.byte	000,176,102,176,142,142,176,000,000,176,102,176,140,140,140,000
+	.byte	000,000,010,000,000,010,000,000,000,000,000,000,000,000,000,000
+	.byte	000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000
+	.byte	000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000
+	.byte	000,000,000,000,000,000,000,000,000,176,102,102,176,142,142,000
+	.byte	000,076,102,076,142,142,076,000,000,176,002,002,006,006,176,000
+	.byte	000,076,102,102,142,142,076,000,000,176,002,176,006,006,176,000
+	.byte	000,176,002,176,006,006,006,000,000,176,102,002,162,142,176,000
+	.byte	000,102,102,176,142,142,142,000,000,020,020,020,030,030,030,000
+	.byte	000,100,100,100,142,142,176,000,000,102,102,176,062,062,062,000
+	.byte	000,002,002,002,002,002,176,000,000,176,112,112,152,152,152,000
+	.byte	000,116,112,112,152,152,172,000,000,176,102,102,142,142,176,000
+	.byte	000,176,102,102,176,006,006,000,000,176,102,102,162,162,376,340
+	.byte	000,176,102,102,176,062,062,000,000,176,002,176,140,140,176,000
+	.byte	000,176,020,020,030,030,030,000,000,102,102,102,142,142,176,000
+	.byte	000,102,102,102,064,064,030,000,000,112,112,112,152,152,176,000
+	.byte	000,102,044,030,030,064,142,000,000,102,102,176,030,030,030,000
+	.byte	000,176,100,176,006,006,176,000
+
+; items addrs - Nothing, Shuriken, Knife, Empty Box, Question, Pipe, Question, Wrench
+ItemsPicTbl:
+	.word	K05274, K05450, K05624, K06000, K06154, K06504, K06154, K06330
+
+; items data 32x24, 108. bytes each * 7 = 756. bytes total
+K05274:	.BYTE	000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000
+	.BYTE	000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000
+	.BYTE	000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000
+	.BYTE	000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000
+	.BYTE	000,000,000,000,322,273,124,172,126,222,324,112,126,222,324,012
+	.BYTE	136,222,327,153,132,222,124,113,132,222,124,113,322,223,124,172
+	.BYTE	000,000,000,000,000,000,000,000,360,360,360,360
+K05450:	.BYTE	000,000,000,000,000,000,001,000,000,000,001,000,000,000,001,000
+	.BYTE	000,200,001,000,000,200,001,000,000,300,003,000,000,376,017,000
+	.BYTE	000,360,177,000,000,300,003,000,000,200,001,000,000,200,001,000
+	.BYTE	000,200,000,000,000,200,000,000,000,200,000,000,000,000,000,000
+	.BYTE	000,000,000,000,000,000,000,000,256,152,252,113,242,252,252,130
+	.BYTE	356,152,232,171,250,252,252,150,256,244,252,113,000,000,000,000
+	.BYTE	000,242,340,000,000,342,240,000,360,360,360,360
+K05624:	.BYTE	000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000
+	.BYTE	000,000,000,000,000,000,000,000,000,000,000,007,000,003,300,003
+	.BYTE	200,000,360,000,200,000,074,000,200,000,017,000,200,300,003,000
+	.BYTE	200,360,000,000,200,074,000,000,200,017,000,000,300,003,000,000
+	.BYTE	360,003,000,000,374,006,000,000,076,030,001,000,016,340,000,000
+	.BYTE	000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000
+	.BYTE	140,140,342,342,140,342,342,342,140,140,140,140
+K06000:	.BYTE	000,300,003,000,000,100,003,000,000,100,003,000,000,100,003,000
+	.BYTE	000,360,017,000,000,240,007,000,000,100,003,000,000,200,001,000
+	.BYTE	377,377,377,377,377,377,377,377,000,000,000,000,024,000,000,050
+	.BYTE	022,000,000,110,360,377,377,017,120,125,125,015,120,125,125,015
+	.BYTE	000,000,000,000,322,273,124,172,126,222,324,112,126,222,324,012
+	.BYTE	136,222,327,153,132,222,124,113,132,222,124,113,322,223,124,172
+	.BYTE	040,040,040,040,014,014,014,014,360,360,360,360
+K06154:	.BYTE	000,000,000,000,000,340,007,000,000,270,036,000,000,124,065,000
+	.BYTE	000,002,150,000,000,302,121,000,000,044,142,000,000,030,124,000
+	.BYTE	000,000,144,000,000,000,062,000,000,000,051,000,000,200,024,000
+	.BYTE	000,100,012,000,000,040,005,000,000,240,002,000,000,040,003,000
+	.BYTE	000,340,003,000,000,000,000,000,000,300,001,000,000,140,003,000
+	.BYTE	000,240,002,000,000,040,003,000,000,300,001,000,000,000,000,000
+	.BYTE	302,302,302,302,302,302,302,302,302,302,302,302
+K06330:	.BYTE	000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,034
+	.BYTE	000,000,000,076,000,000,000,007,000,000,300,007,000,000,160,047
+	.BYTE	000,000,334,077,000,000,367,034,000,300,075,000,000,160,017,000
+	.BYTE	000,334,003,000,360,366,000,000,370,075,000,000,310,017,000,000
+	.BYTE	300,003,000,000,300,001,000,000,370,000,000,000,160,000,000,000
+	.BYTE	000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000
+	.BYTE	000,000,242,240,242,242,240,242,240,242,000,000
+K06504:	.BYTE	000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000
+	.BYTE	000,000,000,000,000,000,000,000,376,377,377,177,372,376,377,177
+	.BYTE	372,340,360,160,002,000,000,100,376,377,377,177,000,000,000,000
+	.BYTE	000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000
+	.BYTE	000,000,000,000,176,176,176,176,306,030,306,006,306,030,306,176
+	.BYTE	176,030,176,006,006,030,006,006,006,176,006,176,000,000,000,000
+	.BYTE	342,342,340,340,242,242,240,240,360,360,360,360
+
+
+; table for auto-masking tiles
+        .byte   300, 303, 307, 307, 316, 317, 317, 317, 334, 337, 337, 337, 336, 337, 337, 337
+        .byte   370, 373, 377, 377, 376, 377, 377, 377, 374, 377, 377, 377, 376, 377, 377, 377
+        .byte   360, 363, 367, 367, 376, 377, 377, 377, 374, 377, 377, 377, 376, 377, 377, 377
+        .byte   370, 373, 377, 377, 376, 377, 377, 377, 374, 377, 377, 377, 376, 377, 377, 377
+        .byte   340, 343, 347, 347, 356, 357, 357, 357, 374, 377, 377, 377, 376, 377, 377, 377
+        .byte   370, 373, 377, 377, 376, 377, 377, 377, 374, 377, 377, 377, 376, 377, 377, 377
+        .byte   360, 363, 367, 367, 376, 377, 377, 377, 374, 377, 377, 377, 376, 377, 377, 377
+        .byte   370, 373, 377, 377, 376, 377, 377, 377, 374, 377, 377, 377, 376, 377, 377, 377
+MaskTable:
+        .byte   000, 003, 007, 007, 016, 017, 017, 017, 034, 037, 037, 037, 036, 037, 037, 037
+        .byte   070, 073, 077, 077, 076, 077, 077, 077, 074, 077, 077, 077, 076, 077, 077, 077
+        .byte   160, 163, 167, 167, 176, 177, 177, 177, 174, 177, 177, 177, 176, 177, 177, 177
+        .byte   170, 173, 177, 177, 176, 177, 177, 177, 174, 177, 177, 177, 176, 177, 177, 177
+        .byte   340, 343, 347, 347, 356, 357, 357, 357, 374, 377, 377, 377, 376, 377, 377, 377
+        .byte   370, 373, 377, 377, 376, 377, 377, 377, 374, 377, 377, 377, 376, 377, 377, 377
+        .byte   360, 363, 367, 367, 376, 377, 377, 377, 374, 377, 377, 377, 376, 377, 377, 377
+        .byte   370, 373, 377, 377, 376, 377, 377, 377, 374, 377, 377, 377, 376, 377, 377, 377
+
+; guard tiles
+; 243..245 - flamethrower
+; (!!!) they are +1 in this table too
+GuardTilesAttr:
+	.byte	0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 000 - 020
+	.byte	0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 020 - 040
+	.byte	0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 040 - 060
+	.byte	0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 060 - 100
+	.byte	0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 100 - 120
+	.byte	0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 120 - 140
+	.byte	0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 140 - 160
+	.byte	0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 160 - 200
+	.byte	0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 200 - 220
+	.byte	0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 220 - 240
+	.byte	0, 0, 0, 0, 6, 6, 6, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 240 - 260
+	.byte	0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 260 - 300
+	.byte	0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 300 - 320
+	.byte	0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 320 - 340
+	.byte	0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 340 - 360
+	.byte	0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 360 - 400
+; (waste of memory to color only flamethrower, but alas..)
+
+; waste of memory too ^_^
+; 117 - 126 - electric fence
+ElectroTbl:
+	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 000 - 020
+	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 020 - 040
+	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 040 - 060
+	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 060 - 100
+	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0,20 ; 100 - 120
+	.byte	20,20,20,20,20,20,20, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 120 - 140
+	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 140 - 160
+	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 160 - 200
+	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 200 - 220
+	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 220 - 240
+	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 240 - 260
+	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 260 - 300
+	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 300 - 320
+	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 320 - 340
+	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 340 - 360
+	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 360 - 400
+
+
+; //////////////////////////////////////////////////////////////////////////////
+; // Utils
+; //////////////////////////////////////////////////////////////////////////////
+
+; LFSR 8-bit random (Galois), 2^8-1 cycle
+; cycle xor: 8-bit [10111000] 9-bit [110110000]
+Random:	asr	#123
+	bcc	30$
+	mov	#^B0000000010111000, R0
+	xor	R0, Random+2
+30$:	mov	Random+2, R0
+	return
+
+
+PrepareBank3:
+	mov	#C_RAM_BANKS13, @#177716
+	; prepare byte -> word tables
+	; 16 tables by 512 bytes to comvert graphics byte to colored BK graphics word
+	; 4 ink * 4 paper colors (some tables are not needed though)
+	clr	R5				; xxxxPPII (P-paper, I-ink)
+	mov	#100000, R4
+10$:	mov	R5, 40$+2
+	mov	R5, 50$+2
+	bic	#^B1111111111111100, 40$+2	; modify bis for 'ink'
+	asr	50$+2				; modify bis for 'paper'
+	asr	50$+2
+	clr	R0
+20$:	clr	(R4)				; cycle 256 bytes
+	mov	R0, R1
+	mov	#8., R3
+30$:	asl	(R4)				; cycle 8 bits
+	asl	(R4)
+	aslb	R1
+	bcc	50$
+40$:	bis	#000000, (R4)			; set 'ink'
+	br	60$
+50$:	bis	#000000, (R4)			; set 'paper'
+60$:	sob	R3, 30$
+	inc	R4
+	inc	R4
+	incb	R0
+	bne	20$
+	inc	R5
+	cmp	R5, #16.
+	blo	10$
+	return
+
+
+; main keys interrupt
+KeyInt:	mov	R0, -(SP)
+	mov	@#177662, R0
+	cmp	R0, #C_KEY_LEFT
+	bne	10$
+	bis	#P_KEY_LEFT, PpuKeys
+	br	90$
+10$:	cmp	R0, #C_KEY_RIGHT
+	bne	20$
+	bis	#P_KEY_RIGHT, PpuKeys
+	br	90$
+20$:	cmp	R0, #C_KEY_UP
+	bne	30$
+	bis	#P_KEY_UP, PpuKeys
+	br	90$
+30$:	cmp	R0, #C_KEY_DOWN
+	bne	40$
+	bis	#P_KEY_DOWN, PpuKeys
+	br	90$
+40$:	cmp	R0, #C_KEY_SPACE
+	bne	90$
+	bis	#P_KEY_FIRE, PpuKeys
+90$:	mov	(SP)+, R0
+	rti
+
+
+; func keys interrupt
+KeyFuncInt:
+	rti
+
+
+; keys -> R0
+GetKey:	mov	PpuKeys, R0
+	return
+
+
+; EXX procedure R1 R2 R3 <-> R1' R2' R3'
+; TODO: rework, used only in one place
+ExTmp7:	.blkw	7
+ExxPro:	push	R4
+	mov	#ExTmp7, R4
+	tst	(R4)
+	bne	20$
+	mov	SP, (R4)+
+	mov	R1, (R4)+
+	mov	R2, (R4)+
+	mov	R3, (R4)+
+	mov	(R4)+, R1
+	mov	(R4)+, R2
+	mov	(R4)+, R3
+10$:	pop	R4
+	return
+20$:	add	#14., R4
+	mov	R3, -(R4)
+	mov	R2, -(R4)
+	mov	R1, -(R4)
+	mov	-(R4), R3
+	mov	-(R4), R2
+	mov	-(R4), R1
+	clr	-(R4)
+	br	10$
+
+
+; fade screen by randomly removing tiles
+FadeScreen:
+	mov	#C_SCRWID-4, R2
+	mov	#255., R4
+10$:	call	Random					; R0 = (byte) [X][Y]
+	call	50$
+	sob	R4, 10$
+	clr	R0					; because we haven't 0 in random
+50$:	mov	#C_RAM_BANKS35, @#177716
+	mov	R0, R1
+	bic	#^B1111111100001111, R1
+	asr	R1
+	asr	R1
+	bic	#^B1111111111110000, R0
+	swab	R0
+	asl	R0
+	asl	R0					; (!) must be *C_SCRWID*16.
+	add	R1, R0
+	add	#100000, R0
+	mov	#16., R3
+60$:	clr	(R0)+
+	clr	(R0)+
+	add	R2, R0
+	sob	R3, 60$
+	mov	#C_RAM_BANKS12, @#177716
+	return
+
+
+; to call Print as: call PrinSP, .word coords
+PrinSP:	mov	@0(SP), R2
+	add	#2, (SP)
+
+; print procedure, R3 - string, R1 - length, R2 - screen coords
+; TODO: better coords as [Y X]
+PrintStr:
+	push	R2
+	push	R4
+	push	R5
+	call	ScrToVaddr			; screen coords R2 to screen address
+10$:	movb	(R3)+, R0			; string chars are < 128.
+	asl	R0
+	asl	R0
+	asl	R0				; *8 bytes
+	add	#FontData-256., R0		; + font base addr minus 256. for 32. symbols
+	mov	#8., R4
+	mov	#C_RAM_BANKS35, @#177716
+20$:	clr	R5
+	bisb	(R0)+, R5			; font byte
+	asl	R5				; *2
+	mov	Byte2Word02(R5), (R2)		; to BK screen word (red)
+	add	#C_SCRWID, R2
+	sob	R4, 20$
+	mov	#C_RAM_BANKS12, @#177716
+	sub	#8.*C_SCRWID-2, R2		; advance vaddr
+	sob	R1, 10$
+	pop	R5
+	pop	R4
+	pop	R2
+	return
+
+
+; screen coords R2 to screen address
+; [0  1  0  Y7 Y6 Y2 Y1 Y0 | Y5 Y4 Y3 X4 X3 X2 X1 X0]
+; игнорируем Y2 Y1 Y0 (всё кратно 8)
+ScrToVaddr:
+	mov	R2, R4
+	bic	#^B1111111111100000, R4
+	asl	R4				; R4 = X byte in row [0..63.]
+	bic	#^B1110011100011111, R2
+	swab	R2
+	asrb	R2
+	asrb	R2
+	asrb	R2
+	swab	R2				; R2 = Y*32.
+	asl	R2				; *64.
+	asl	R2
+	asl	R2
+	asl	R2				; *64.*8.
+	add	R4, R2
+	add	#C_VADDR, R2
+	return
+
+
+; Vsync interrupt
+VsyInt:	; count #1
+ 	inc	(PC)+
+VsyCnt:	.word	0
+	; check for 10-sec
+	cmp	VsyCnt, #500.
+	blo	VsyRti
+	inc	FpsOutput+2			; flag to draw fps
+	clr	VsyCnt	
+VsyRti:	rti
+
+
+; Fps output
+FpsOutput:
+	tst	#000000
+	bne	10$
+	return
+10$:	mov	#C_RAM_BANKS35, @#177716
+	clr	FpsOutput+2
+	mov	#144.+16.*C_SCRWID+44.+C_VADDR, R4
+	mov	FramesCount, R0
+	clr	FramesCount
+	cmp	R0, #999.
+	blos	20$
+	mov	#999., R0
+20$:	mov	#100., R2
+	call	100$
+	mov	#10., R2
+	call	100$
+	mov	R0, R1
+	call	DrawDigit
+	mov	#C_RAM_BANKS12, @#177716
+	return
+100$:	clr	R1
+110$:	cmp	R0, R2
+	blo	DrawDigit
+	sub	R2, R0
+	inc	R1
+	br	110$
+; draw one digit, R1 - 0..9, R4 - vaddr
+DrawDigit:
+	asl	R1
+	asl	R1
+	asl	R1
+	add	#FontData+128., R1
+	.rept	8.
+	movb	(R1)+, R5
+	mov	Byte2Word02(R5), (R4)
+	add	#C_SCRWID, R4
+	.endr
+	sub	#8.*C_SCRWID-2, R4
+	return
+
+
+; DOPIC procedure: Show the room on the screen
+DrawScreen:
+	; check pressed keys here
+	bit	#100, @#177716
+	beq	10$
+	clr	PpuKeys
+10$:	; draw then
+	inc	FramesCount
+	clr	NinaOnFire
+	clr	NinaCanShock
+	; "снизу-вверх" будет быстрее, но выглядит "корявее"...
+	; ну тут начались извраты, как уменьшить прохождение 1100(8) байт экрана
+	; на удивление этот вариант быстрей чем проходить их побайтно
+	; ибо как-правило бОльшая часть экрана не изменяется совсем
+	mov	#BuffD, R5			; R5 - addr in BuffD (!) do not touch it
+DrawScrCycle:
+	mov	(R5), R0			; (!) WORD size
+	bne	DrawScrWord
+	inc	R5
+	inc	R5
+DrawScrCont:
+	cmp	#TILES_DX*TILES_DY+BuffD, R5
+	bhi	DrawScrCycle
+DrawScrFin:
+	; check hit by flames
+	mov	NinaOnFire, R1
+	beq	10$
+	call	Decen
+10$:	; maybe show fps
+	call	FpsOutput
+	return
+DrawScrWord:
+	tstb	R0
+	beq	10$
+	call	TBufBgr
+10$:	clrb	(R5)+
+	tstb	(R5)
+	beq	20$
+	call	TBufBgr
+20$:	clrb	(R5)+
+	br	DrawScrCont
+
+
+; background tile
+TBufBgr:
+	clr	R1
+	bisb	BuffB-BuffD(R5), R1		; get tile from BUFFB: Back tile screen
+	movb	ElectroTbl(R1), NinaCanShock	; Nina can be shocked with some background
+	asl	R1
+	mov	BackTilesTbl(R1), R1
+	; put background
+	mov	#TileBuf, R3
+	mov	(R1)+, (R3)+
+	mov	(R1)+, (R3)+
+	mov	(R1)+, (R3)+
+	mov	(R1)+, (R3)+
+	mov	(R1)+, (R3)+			; last byte is attr
+
+; guard 1
+TBufGuard1:
+	clr	TOvClr				; clear tile color bis value
+	clr	R1
+	bisb	BuffG1-BuffD(R5), R1
+	incb	R1
+	beq	TBufGuard2
+	movb	GuardTilesAttr(R1), TOvClr	; add guard 1 tiles color attribute
+	asl	R1
+	asl	R1
+	asl	R1
+	add	#GuardTiles-8., R1
+	movb	K36037, TOvDir			; set guard 1 DIR
+	call	TileOver
+
+; guard 2
+TBufGuard2:
+	clr	R1
+	bisb	BuffG2-BuffD(R5), R1
+	incb	R1
+	beq	TBufNina
+	asl	R1
+	asl	R1
+	asl	R1
+	add	#GuardTiles-8., R1
+	movb	K36040, TOvDir			; set guard 2 DIR
+	call	TileOver
+
+; Nina
+TBufNina:
+	clr	R1
+	bisb	BuffN-BuffD(R5), R1
+	incb	R1
+	beq	TBufFore
+	add	TOvClr, NinaOnFire		; if were flamethrower - add it 
+	add	NinaCanShock, NinaOnFire	; if on electric fence - add it too
+	asl	R1
+	asl	R1
+	asl	R1
+	add	#NinaTiles-8., R1
+	movb	K36264, TOvDir			; set Nina DIR
+	call	TileOver
+
+; foreground tile
+TBufFore:
+	clr	R1
+	bisb	BuffO-BuffD(R5), R1		; R1 - foreground tile #
+	incb	R1				; +1 (!)
+	beq	TBufOut				; was 377 - skip foreground
+	cmp	R1, #345			; is it 'font' tile?
+	blo	10$
+	; font tile
+	asl	R1
+	asl	R1
+	asl	R1
+	add	#FontData-1568.-8., R1		; + computerized font base address
+	mov	#TileBuf, R2			; PIX buffer address
+	mov	(R1)+, (R2)+
+	mov	(R1)+, (R2)+
+	mov	(R1)+, (R2)+
+	mov	(R1)+, (R2)+
+	mov	#^B10000, (R2)+			; black on green color
+	br	TBufOut				; => DRAW
+10$:	; draw usual foreground tile, R1 - tile # + 1
+	asl	R1
+	mov	ForeTilesTbl-2(R1), R1		; compensate for +1 also
+	mov	#TileBuf, R2
+	.rept	4.
+	bic	(R1)+, (R2)
+	bis	(R1)+, (R2)+
+	.endr
+	mov	(R1), (R2)			; ZX attr
+
+; output tile buffer to screen (R5 - index)
+TBufOut:
+	; index to screen coords
+	mov	R5, R1
+	sub	#BuffD, R1
+	asl	R1
+	mov	Index2Vaddr(R1), R1
+	mov	TileBuf+8., R0			; bk color attrs byte
+	mov	Byte2WordTbl(R0), 20$+2		; modify color table by color attrs
+	mov	#TileBuf, R0
+	mov	#8., R3
+	mov	#C_SCRWID, R4
+	mov	#C_RAM_BANKS35, @#177716	; drawing tile RAM banks are 3 5
+10$:	clr	R2
+	bisb	(R0)+, R2
+	asl	R2
+20$:	mov	Byte2Word03(R2), (R1)
+	add	R4, R1
+	sob	R3, 10$	
+	mov	#C_RAM_BANKS12, @#177716	; return to normal game RAM banks
+	inc	(PC)+
+TilesCount:	.word	0
+	; DEBUG
+;	bit	#1, FramesCount
+;	beq	99$
+;	mov	R5, R1
+;	sub	#BuffD, R1
+;	asl	R1
+;	mov	Index2Vaddr(R1), R1
+;	mov	#177777, R0
+;	mov	#C_RAM_BANKS35, @#177716
+;	.rept	8.
+;	xor	R0, (R1)
+;	add	#C_SCRWID, R1
+;	.endr
+;	mov	#C_RAM_BANKS12, @#177716
+99$:	return
+
+; out tile with auto-masking and reflection
+; R1 - source addr, TOvDir - direction
+TileOver:
+	mov	#TileBuf, R2
+	; use C as flag for DIR
+	tst	(PC)+				; check DIR (also clears C)
+TOvDir:	.word	0
+	beq	.+4
+	sec					; use mirroring then
+	.rept	8.
+	movb	(R1)+, R0			; R1 - tile byte
+	nop					; (!) BUG in 1801VM1 CPU - it screws flag C after movb, one NOP is fixing it
+	bcc	.+6				; skip mirroring if needed
+	movb	ReflectionTable(R0), R0		; mirror tile byte
+	bicb	MaskTable(R0), (R2)		; apply auto-mask
+	bisb	R0, (R2)+			; apply tile
+	.endr
+	bic	#^B1111111111000111, (R2)	; always clear 'ink' (to black color)
+	bis	(PC)+, (R2)			; set 'ink' if needed
+TOvClr:	.word	0
+	return
+
+
+; print string on background tiles buffer, R2 - string, R1 - length, R3 - buf addr 
+PrintOnBgr:
+	mov	R1, R5
+10$:	movb	(R2)+, R0
+	add	#244, R0			; 228.-64.
+	movb	R0, (R3)+
+	sob	R1, 10$
+	sub	#2200, R3			; BUFFO-BUFFD (go to 'were changes' buffer)
+20$:	incb	-(R3)				; mark tile as 'was changed'
+	sob	R5, 20$
+	return
+
+
+; NERDR procedure: Update NEAR indicator
+DrawNear:
+	push	R3
+	tstb	R0
+	bne	20$
+	mov	#K24762, R3
+	tstb	(R3)
+	beq	20$
+	decb	(R3)
+	mov	K23746, R3			; get NERST
+	mov	#5, R1
+10$:	bicb	#^B10000000, (R3)+
+	sob	R1, 10$				; repeat
+	call	XorNear				; invert NEAR sign
+	call	L10300				; increase money for stash searched?
+	clr	R0
+20$:	mov	#32, R3				; X shift to draw item (near)
+	br	DrawItem			; draw NEAR item
+
+; invert 4-char NEAR sign
+XorNear:
+	mov	#176.*C_SCRWID+54.+C_VADDR, R3
+	mov	#8., R1
+	mov	#177777, R0
+	mov	#C_RAM_BANKS35, @#177716
+10$:	xor	R0, (R3)+
+	xor	R0, (R3)+
+	xor	R0, (R3)+
+	xor	R0, (R3)+
+	add	#C_SCRWID-8., R3
+	sob	R1, 10$				; repeat
+	mov	#C_RAM_BANKS12, @#177716
+	return
+
+; draw HELD item
+DrawHeld:
+	movb	K33464, R0			; get HELD value
+	push	R3
+	clr	R3				; draw HELD
+
+; draw HELD or NEAR item, R0 - item #, R3 - X 000 for HELD, 026 for NEAR
+; (!) extra pop R3 from stack
+DrawItem:
+	push	R1
+	push	R2	
+	bic	#^B1111111111111000, R0
+	asl	R0
+	mov	ItemsPicTbl(R0), R2		; get item address
+	asl	R3
+	add	#152.*C_SCRWID+C_VADDR+2, R3	; HELD item screen address + offset
+	mov	#24., R1
+	mov	#C_RAM_BANKS35, @#177716
+10$:	.rept	4
+	clr	R5
+	bisb	(R2)+, R5
+	asl	R5
+	mov	Byte2Word02(R5), (R3)+
+	.endr
+	add	#C_SCRWID-8., R3
+	sob	R1, 10$	
+	mov	#C_RAM_BANKS12, @#177716
+	mov	#3, R5 				; ???
+	pop	R2
+	pop	R1
+	pop	R3
+	return
+
+
+; Clear buffers
+; BUFCL procedure: Fill Ninja tile screen
+ClearBuffNina:
+	MOV	#BuffN, R3			; BUFFN Ninja tile screen address
+	MOV	#000110, R1			; 72. * 4 = 288. words
+ClearBuff:	
+	MOV	#177777, R5			; filler
+10$:	MOV	R5, (R3)+			; <
+	MOV	R5, (R3)+
+	MOV	R5, (R3)+
+	MOV	R5, (R3)+
+	SOB	R1, 10$				; repeat
+	RETURN
+; BUFC2 procedure: Fill Enemy 0/1 tile screens
+ClearBuffGuards:	
+	MOV	#BuffG1, R3			; BUFG1 Enemy 0 tile screen address
+	MOV	#000220, R1			; 144.
+	BR	ClearBuff			; fill Enemy 0/1 tile screens
+
+
+; sound 'step'
+SoundStep:
+	return
+
+; sound 2 (guard was hit)
+Sound2:
+	return
+
+; sound 'console use'
+SoundConsole:
+	bic	#20, PpuKeys			; remove 'fire' button
+	return
+
+
+; //////////////////////////////////////////////////////////////////////////////
+; // START
+; //////////////////////////////////////////////////////////////////////////////
+
+CoreStart:	
+	; reset 
+	mov	#1000, SP
+	clr	PpuKeys
+	; title screen
+	call	FadeScreen
+
+	; set level data pointer
+	mov	#LData, R4
+	mov	R4, L9Ptr
+	; set tapes needed
+	movb	1(R4), K52626
+	; set bike needed
+	movb	4(R4), K17200
+	mov	#377, R0
+	cmpb	#377, K17200
+	bne	90$
+	mov	#1, R0
+90$:	movb	R0, K13224+2
+	; set launch missile
+	movb	2(R4), K11770
+	; set disable fence
+	movb	3(R4), K31220+2
+
+; Prepare Stashes
+PrepStashes:
+	MOV	#000041, R5		; 33. records
+	MOV	#K23030+4, R2
+	MOV	#K23030+11, R3
+10$:	MOV	#000005, R1		; | 5 bytes
+20$:	MOVB	(R3)+, (R2)+		; | < copy byte
+	SOB	R1, 20$			; | repeat
+	MOV	#000011, R1		; | 9.
+	ADD	R1, R3
+	ADD	R1, R2
+	SOB	R5, 10$			; repeat
+
+; show indicator panel
+ShowPanel:
+
+
+; Starting the game, indicator panel frame is already shown
+; K12454
+GameStart:
+	; zero money
+	MOV	#StrMoney+6, R3		; MONEY+5
+	MOV	#000006, R1		; 6 bytes
+10$:	MOVB	#060, (R3)+		; <
+	SOB	R1, 10$			; repeat
+
+	; print strings on panel
+	MOV	#StrHeld, R3		; "HELD" etc.
+	MOV	#000004, R1		; 4.
+	CALL	PRINSP			; PRINT string "HELD"
+	.WORD	050301			; screen coords
+	MOV	#000005, R1		; 5.
+	CALL	PRINSP			; PRINT string "TIMER"
+	.WORD	050325			; screen coords
+	MOV	#000004, R1		; 4.
+	CALL	PRINSP			; PRINT string "NEAR"
+	.WORD	050333			; screen coords
+	MOV	#000016, R1		; 14.
+	CALL	PRINSP			; PRINT string " PAY $0000000 "
+	.WORD	050146			; screen coords
+
+	MOVB	#016, <L14506+2>	; set (NRGCR+1) = 14.
+	MOVB	#007, K36211		; set MAND = 7.
+	MOVB	#046, K36210		; set MANA = 38.
+	MOV	#000406, K36212		; set MANPS
+	MOVB	#021, K36215		; set RMAC room position = 17.
+	MOV	#050205, K51142		; set PTSPS
+	CLR	R0
+	CLRB	K24762
+	CLRB	K51145			; clear TAPCT - tapes carried total
+	CLRB	K51146			; clear TAPTT
+	CLRB	K17716			; clear BIKMR
+	CLRB	K36216			; clear ELECU
+	CLRB	K33540			; clear DEAD
+	CLRB	K36214			; RMDN = 0 top level
+	MOV	#<K23030+4>, K23746	; INITSTA address -> NERST
+	MOV	#046310, <K36276+2>	; GLINC address -> CHARN+1
+	MOV	#K40520, <K25272+2>	; GLIDERP address -> VECTN+1
+	CLRB	K37662			; set SPEED = 0
+	CLRB	K36264			; set DIR = 0
+	MOV	#<K70632-15.>, <K13332+2>	; MAP-15 address -> RM+1
+	INCB	R0			; R0 = 1
+	MOVB	R0, <L14534+2>		; set (NRGPX+1) = 1
+	MOVB	R0, <Decen+2>		; set (DECEN+1) = 1
+	MOVB	R0, K33464		; set HELD value = 1 = Shuriken
+	MOVB	R0, K33465		; set NEAR value = 1
+	MOVB	R0, K33542		; set JUMP = 1
+	MOVB	R0, K36207		; set TIME2 = 1
+	MOV	#033556, R3		; TRACK1+11.
+	MOV	#000014, R2		; 12.
+	MOV	#000145, R1		; 101.
+; GRDIN:
+K13036:	MOVB	(R3), R0		; <
+	CMPB	R0, #005		; == 5 ?
+	BNE	K13050			; => NDGIT
+	CLRB	(R3)
+K13050:	CMPB	R0, #006		; == 6 ?
+	BNE	K13062
+	MOVB	#001, (R3)
+K13062:	ADD	R2, R3
+	SOB	R1, K13036		; repeat
+	CALL	DrawHeld			; HLDOD
+
+; INISC: Init screen, room changed
+K13072:	MOVB	#005, K26666		; set GDNRG = 5
+	MOVB	#003, L15646		; set RMTIME = 3
+	CLRB	K14640			; clear TVSWT
+	MOVB	K17200, R0		; get BIKER
+	INCB	R0
+	BNE	10$
+	CMPB	K36214, #023		; check if RMDN == 19.
+	BNE	10$
+	MOV	#K17716, R3		; BIKMR
+	TSTB	(R3)
+	BNE	10$
+	MOVB	#001, (R3)		; set BIKMR = 1
+	MOV	#K17720, R3		; " BIKE ARRIVED "
+	MOV	#000016, R1		; 14.
+	call	PrinSP			; PRINT string
+	.word	050146			; screen coords
+10$:	MOV	#000006, R1		; 6 = number of records
+	MOV	#K33466, R3		; MISL1 - Ninja object
+	MOV	#000007, R2		; 7 = object record size
+20$:	CLRB	(R3)			; <
+	ADD	R2, R3			; | next record
+	SOB	R1, 20$			; repeat
+	MOVB	K36215, R1		; get RMAC room position
+	MOVB	#001, R0
+	DECB	R1
+	BNE	K13230			; RMAC == 1 ? no => JIRRT
+; DRFNT:
+K13224:	MOVB	#001, R0		;!!MUT-ARG!!
+; JIRRT:
+K13230:	MOVB	R0, 070340		; set DRFNQ
+	CLRB	K17635			; clear LETNO
+	call	ClearBuffNina		; BUFCL Fill Ninja tile screen
+	call	ClearBuffGuards		; BUFC2 Fill Enemy 0/1 tile screens
+	; clear background buffer
+	MOV	#BuffB, R3		; BUFFB Back tile screen address
+	MOV	#000440, R1		; 288. words
+10$:	CLR	(R3)+			; <
+	SOB	R1, 10$			; repeat
+	;
+	MOV	#000440, R1		; 288. words
+	MOV	#177777, R5		; filler
+K13274:	MOV	R5, (R3)+		; <
+	SOB	R1, K13274		; repeat
+	MOV	#BuffD, R3		; BUFFD
+	MOV	#000440, R1		; 288. words
+	MOV	#000401, R5		; filler
+10$:	MOV	R5, (R3)+		; <
+	SOB	R1, 10$			; repeat
+
+	jmp	K13332
+
+	; WARNING!
+	.if LT 13332-.
+	.error START addr not in place
+	.endc 
+
+	.=13332
+
+; RM:
+K13332:	MOV	#000000, R3		;!!MUT-ARG!!
+	MOVB	K36214, R0		; get RMDN room level
+	BEQ	K13346			; top level =>
+; RMDN != 0
+	MOVB	(R3), R0		; get room number
+; NTPRW: RMDN == 0
+K13346:	BIC	#177400, R0
+	ASL	R0
+	MOV	K72572(R0), R3		; Get room sequence addr from the table
+; NXRUT: Build the room using the room sequence
+K13360:	MOVB	(R3), R0		; get marker
+	INCB	R0			; 377? end of sequence?
+	BNE	10$
+	JMP	K24272			; => RMDUN End of room sequence
+10$:	INC	R3
+	PUSH	R3
+	ASL	R0			; *2
+	BIC	#177400, R0
+	ADD	#<K13426-2>, R0		; + <ROUTS-2>
+	JMP	@000000(R0)		; Process this marker
+; BAKWD:
+K13414:	POP	R3
+	INC	R3
+	BR	K13360			; => NXRUT
+; RETRT:
+K13422:	JMP	@#K13414		;!!MUT-ARG!!
+; ROUTS:
+K13426:	.WORD	K20120		; $00 000 - HORLN - Fill horizontally W with tile
+	.WORD	K20152		; $01 001 - VERLN - Fill vertically H with tile
+	.WORD	K24104		; $02 002 - BLOCK - Fill rectangle WxH with tile
+	.WORD	K17762		; $03 003 - FILLB - Fill the whole room with tile
+	.WORD	K20022		; $04 004 - ONECR - Fill one tile
+	.WORD	K16024		; $05 005 - RKTTP - Rocket upper part
+	.WORD	K20136		; $06 006 - DIAGR - Fill diagonally right-down
+	.WORD	K20144		; $07 007 - DIAGL - Fill diagonally left-down
+	.WORD	K20260		; $08 010 - LADSK - Ladder
+	.WORD	K20346		; $09 011 - ROCKS - Supertile
+	.WORD	K24004		; $0A 012 - DIBL1 - Fill triangle down-right
+	.WORD	K23752		; $0B 013 - DIBL2 - Fill triangle up-right
+	.WORD	K23760		; $0C 014 - DIBL3 - Fill triangle right-up
+	.WORD	K23776		; $0D 015 - DIBL4 - Fill triangle right-down
+	.WORD	K20240		; $0E 016 - LADTN - Wide white ladder
+	.WORD	K20056		; $0F 017 - TLDTN - Joint between the ladder and the mast
+	.WORD	K15226		; $10 020 - CUPB2 - Cupboard
+	.WORD	K16220		; $11 021 - LFTPF - Lift platform bottom
+	.WORD	K15562		; $12 022 - TREEF - Tree leaves small
+	.WORD	K16400		; $13 023 - MOON - Moon
+	.WORD	K16134		; $14 024 - LFFN1 - Rocket wing left top
+	.WORD	K16152		; $15 025 - RTFN1 - Rocket wing right top
+	.WORD	K15634		; $16 026 - LFFN2 - Rocket wing element left bottom
+	.WORD	K15670		; $17 027 - RTFN2 - Rocket wing element right bottom
+	.WORD	K15724		; $18 030 - LEFEX
+	.WORD	K15764		; $19 031 - RITEX
+	.WORD	K17736		; $1A 032 - REDOF
+	.WORD	K17754		; $1B 033 - REDON
+	.WORD	K16116		; $1C 034 - LFTRE
+	.WORD	K16350		; $1D 035 - RADIA
+	.WORD	K20250		; $1E 036 - RADLD
+	.WORD	K16324		; $1F 037 - HIDLD
+	.WORD	K16100		; $20 040 - RTTRE
+	.WORD	K20230		; $21 041 - GRLAD
+	.WORD	K17640		; $22 042 - LETR1
+	.WORD	K17646		; $23 043 - LETR2
+	.WORD	K17654		; $24 044 - LETR3 - plorer
+	.WORD	K16656		; $25 045 - BOX1P
+	.WORD	K16742		; $26 046 - FDESK
+	.WORD	K16500		; $27 047 - DOORP
+	.WORD	K15376		; $28 050 - SHELP
+	.WORD	K15464		; $29 051 - SHE2P
+	.WORD	K15352		; $2A 052 - BARBK
+	.WORD	K15332		; $2B 053 - CANIS
+	.WORD	K15324		; $2C 054 - BARB2
+	.WORD	K15316		; $2D 055 - BARB3
+	.WORD	K15500		; $2E 056 - LEVEL - " LEVEL X " sign
+	.WORD	K15264		; $2F 057 - CUPBP - Cupboard
+	.WORD	K15206		; $30 060 - BARFR
+	.WORD	K15200		; $31 061 - BARF2
+	.WORD	K15154		; $32 062 - WNDOP
+	.WORD	K15130		; $33 063 - DESKP  6x5 tiles
+	.WORD	K15122		; $34 064 - DESK2
+	.WORD	K15234		; $35 065 - CUPB3 - Cupboard
+	.WORD	K15242		; $36 066 - CUPB4 - Cupboard
+	.WORD	K15250		; $37 067 - CUPB5 - Cupboard
+	.WORD	K16624		; $38 070 - BOX2P
+	.WORD	K16616		; $39 071 - BOX3P
+	.WORD	K15114		; $3A 072 - DESK3
+	.WORD	K15106		; $3B 073 - DESK4
+	.WORD	K15220		; $3C 074 - CUPB6 - Cupboard
+	.WORD	K15100		; $3D 075 - DESK5
+	.WORD	K15256		; $3E 076 - CUPB7 - Cupboard
+	.WORD	K15472		; $3F 077 - SHE3P
+	.WORD	K16576		; $40 100 - BOX4P
+	.WORD	K15440		; $41 101 - DTREE
+	.WORD	K15424		; $42 102 - DTRE2
+	.WORD	K15432		; $43 103 - DTRE3
+	.WORD	K23772		; $44 104 - LFTDI
+	.WORD	K20132		; $45 105 - DIALF
+	.WORD	K16770		; $46 106 - BIKRD - Motorbike
+	.WORD	K17166		; $47 107 - NCGLD
+	.WORD	K17024		; $48 110 - AUTOR
+	.WORD	K17124		; $49 111 - BKCON
+	.WORD	K17076		; $4A 112 - FRCON
+	.WORD	K17152		; $4B 113 - BCON2 - Console
+	.WORD	K17160		; $4C 114 - FCON2
+	.WORD	K16570		; $4D 115 - BOX5P
+	.WORD	K16632		; $4E 116 - BOX6P
+	.WORD	K16562		; $4F 117 - BOX7P
+	.WORD	K16554		; $50 120 - BOX8P
+	.WORD	K16546		; $51 121 - BOX9P
+	.WORD	K16540		; $52 122 - BX10P
+	.WORD	K16532		; $53 123 - BX11P
+	.WORD	K15072		; $54 124 - DESK6
+	.WORD	K15064		; $55 125 - DESK7
+	.WORD	K15056		; $56 126 - DESK8
+	.WORD	K15050		; $57 127 - DESK9
+	.WORD	K15042		; $58 130 - DES10
+	.WORD	K15034		; $59 131 - DES11
+	.WORD	K15026		; $5A 132 - DES12
+	.WORD	K15020		; $5B 133 - DES13
+	.WORD	K15012		; $5C 134 - DES14
+	.WORD	K15004		; $5D 135 - DES15
+	.WORD	K14776		; $5E 136 - DES16
+	.WORD	K14770		; $5F 137 - DES17
+	.WORD	K14762		; $60 140 - DES18
+	.WORD	K16524		; $61 141 - BX12P
+	.WORD	K14712		; $62 142 - WIND1 9x6 tiles
+	.WORD	K14720		; $63 143 - WIND2 9x6 tiles
+	.WORD	K14704		; $64 144 - WIND3 9x6 tiles
+	.WORD	K14676		; $65 145 - WIND4 9x6 tiles
+	.WORD	K14644		; $66 146 - TVCON 6x6 tiles
+	.WORD	K15310		; $67 147 - BKNOB
+;NOTE: MS0515 has no this	; $68 150 - WHIGD
+;NOTE: MS0515 has no this	; $69 151 - YELBX
+;
+
+@include S217E6.MAC
+
+;
+K14640:	.BYTE	0			; TVSWT
+K14641:	.BYTE	0			; TVCNT
+K14642:	.WORD	0			; TVPPC - not used?
+;
+;NOTE: MS0515 version has no WHIGD, YELBX markers
+;
+; Room marker $66 146 - TVCON 6x6 tiles
+K14644:	MOVB	#001, K14640
+	MOV	#062260, R3
+	MOV	#K14434, R4		; TVCNC
+	MOVB	#006, K01604		; width = 6
+	MOV	#000006, R1		; height = 6
+	BR	K14756			; Copy tiles
+; Room marker $65 145 - WIND4
+K14676:	MOV	#062175, R3		; BUFFB+49.
+	BR	K14724			; => WINDR
+; Room marker $64 144 - WIND3
+K14704:	MOV	#062157, R3		; BUFFB+35.
+	BR	K14724			; => WINDR
+; Room marker $62 142 - WIND1
+K14712:	MOV	#062164, R3		; BUFFB+40.
+	BR	K14724			; => WINDR
+; Room marker $63 143 - WIND2 9x6 tiles
+K14720:	MOV	#062177, R3		; BUFFB+51.
+; WINDR:
+K14724:	CMPB	K36214, #014		; RMDN compare to 12.
+	BLO	K14740			; less than 12.
+	JMP	K16466			; >= 12. => NWUKL
+K14740:	MOV	#K14346, R4		; copy from
+	MOVB	#011, K01604		; width = 9.
+	MOV	#000006, R1		; height = 6
+K14756:	JMP	K16432			; Copy tiles
+; Room marker $60 140 - DES18
+K14762:	MOV	#062564, R3		; BUFFB+296.
+	BR	K15134			; => DES2
+; Room marker $5F 137
+K14770:	MOV	#062602, R3		; BUFFB+310.
+	BR	K15134			; => DES2
+; Room marker $5E 136
+K14776:	MOV	#062573, R3		; BUFFB+303.
+	BR	K15134			; => DES2
+; Room marker $5D 135
+K15004:	MOV	#062555, R3		; BUFFB+289.
+	BR	K15134			; => DES2
+; Room marker $5C 134
+K15012:	MOV	#062631, R3		; BUFFB+333.
+	BR	K15134			; => DES2
+; Room marker $5B 133
+K15020:	MOV	#062616, R3		; BUFFB+322.
+	BR	K15134			; => DES2
+; Room marker $5A 132
+K15026:	MOV	#062743, R3		; BUFFB+407.
+	BR	K15134			; => DES2
+; Room marker $59 131
+K15034:	MOV	#062733, R3		; BUFFB+399.
+	BR	K15134			; => DES2
+; Room marker $58 130
+K15042:	MOV	#062723, R3		; BUFFB+391.
+	BR	K15134			; => DES2
+; Room marker $57 127
+K15050:	MOV	#062705, R3		; BUFFB+377.
+	BR	K15134			; => DES2
+; Room marker $56 126
+K15056:	MOV	#062675, R3		; BUFFB+369.
+	BR	K15134			; => DES2
+; Room marker $55 125
+K15064:	MOV	#062663, R3		; BUFFB+359.
+	BR	K15134			; => DES2
+; Room marker $54 124
+K15072:	MOV	#062654, R3		; BUFFB+352.
+	BR	K15134			; => DES2
+; Room marker $3D 075
+K15100:	MOV	#062542, R3		; UFFB+278
+	BR	K15134			; => DES2
+; Room marker $3B 073
+K15106:	MOV	#062532, R3		; BUFFB+270.
+	BR	K15134			; => DES2
+; Room marker $3A 072
+K15114:	MOV	#062515, R3		; BUFFB+257.
+	BR	K15134			; => DES2
+; Room marker $34 064
+K15122:	MOV	#062640, R3		; BUFFB+340.
+	BR	K15134			; => DES2
+; Room marker $33 063 - DESKP 6x5 tiles
+K15130:	MOV	#062625, R3		; BUFFB+329.
+; DES2:
+K15134:	MOV	#K14310, R4		; copy from DESKC
+	MOVB	#006, K01604		; width = 6
+	MOV	#000005, R1		; height = 5
+	BR	K15420			; => PSTLE
+; Room marker $32 062 - WNDOP
+K15154:	MOV	#062342, R3		; BUFFB+150.
+	MOV	#K14302, R4		; WNDOC
+	MOVB	#003, K01604		; width = 3
+	MOV	#000002, R1		; height = 2
+	BR	K15420			; => PSTLE
+; Room marker $31 061 - BARF2
+K15200:	MOV	#064026, R3		; BUFFO+394.
+	BR	K15212			; => BAR4
+; Room marker $30 060 - BARFR 2x3 tiles
+K15206:	MOV	#064020, R3		; BUFFO+388.
+K15212:	MOV	#K13746, R4		; copy from BARFC
+	BR	K15362
+; Room marker $3C 074 - CUPB6 - Cupboard
+K15220:	MOV	#062364, R3		; BUFFB+168.
+	BR	K15270			; => CUPRP
+; Room marker $10 020 - CUPB2 - Cupboard
+K15226:	MOV	#062546, R3		; BUFFB+282.
+	BR	K15270			; => CUPRP
+; Room marker $35 065 - CUPB3 - Cupboard
+K15234:	MOV	#062532, R3		;BUFFB+270.
+	BR	K15270			; => CUPRP
+; Room marker $36 066 - CUPB4 - Cupboard
+K15242:	MOV	#062516, R3		; BUFFB+258.
+	BR	K15270			; => CUPRP
+; Room marker $37 067 - CUPB5 - Cupboard
+K15250:	MOV	#062500, R3		; BUFFB+244.
+	BR	K15270			; => CUPRP
+; Room marker $3E 076 - CUPB7 - Cupboard
+K15256:	MOV	#062401, R3		; BUFFB+181.
+	BR	K15270			; => CUPRP
+; Room marker $2F 057 - ??? 8x5 tiles
+K15264:	MOV	#062517, R3		; BUFFB+259.
+; CUPRP:
+K15270:	MOV	#K14036, R4		; CUPBC
+	MOVB	#005, K01604		; height = 5
+	MOV	#000010, R1		; width = 8.
+	BR	K15420			; => PSTLE Copy tiles
+; Room marker $67 147 - BKNOB
+K15310:	MOV	#062726, R3		; BUFFB+394.
+	BR	K15356			; => BAR2
+; Room marker $2D 055 - BARB3
+K15316:	MOV	#062732, R3		; BUFFB+398.
+	BR	K15356			; => BAR2
+; Room marker $2C 054 - BARB2
+K15324:	MOV	#062735, R3		; BUFFB+401.
+	BR	K15356			; => BAR2
+; Room marker $2B 053 - CANIS 5x3 tiles
+K15332:	MOV	#062740, R3		; BUFFB+404.
+	MOV	#K14255, R4		; CANCR
+	MOVB	#005, K01604		; width = 5
+	BR	K15370			; Copy tiles, height = 3
+; Room marker $2A 052 - BARBK 2x3 tiles
+K15352:	MOV	#062665, R3		; BUFFB+361.
+K15356:	MOV	#K14274, R4		; BARBC
+K15362:	MOVB	#002, K01604		; width = 2
+K15370:	MOV	#000003, R1		; height = 3
+	BR	K15420			; PSTLE Copy tiles
+; Room marker $28 050 - SHELP 7x9 tiles
+K15376:	MOV	#062471, R3		; BUFFB+237.
+K15402:	MOV	#K14156, R4		; SHELC
+	MOVB	#007, K01604		; width = 7
+	MOV	#000011, R1		; height = 9.
+; PSTLE:
+K15420:	JMP	K16432			; => KOONT
+; Room marker $42 102 - DTRE2
+K15424:	MOV	#063506, R3		; BUFFO+186.
+	BR	K15444
+; Room marker $43 103 - DTRE3
+K15432:	MOV	#063475, R3		; BUFFO+177.
+	BR	K15444
+; Room marker $41 101 - DTREE 5x10 tiles
+K15440:	MOV	#063461, R3		; BUFFO+165.
+K15444:	MOV	#K13754, R4		; DTREC
+	MOVB	#005, K01604		; width = 5
+	MOV	#000012, R1		; height = 10.
+	BR	K15420			; Copy tiles
+; Room marker $29 051 - SHE2P
+K15464:	MOV	#062456, R3		; BUFFB+226.
+	BR	K15402
+; Room marker $3F 077
+K15472:	MOV	#062503, R3		; BUFFB+247.
+	BR	K15402
+; Room marker $2E 056 - " LEVEL X " sign
+K15500:	MOVB	K36214, K01602		; RMDN room level
+	MOV	#000134, R0		; 92.
+	SUB	K01602, R0
+	MOVB	R0, <K15550+7>		; put digit in " LEVEL X " string
+	MOV	#000011, R1
+	MOV	#K15550, R2		; " LEVEL X "
+	mov	#BuffO+241., R3	; BUFFO + something
+	CALL	PrintOnBgr			; BUFOM - Draw string as tiles
+	DEC	(SP)
+	JMP	K13422
+;
+K15550:	.ASCIZ	/@LEVEL@X@/
+;
+; Room marker $12 022 - TREEF - Tree leaves small, 5x4 tiles
+K15562:	MOV	#K15610, R4		; copy from
+	MOVB	#005, K01604		; width = 5
+	MOV	#000004, R1		; height = 4
+	MOV	#063477, R3		; BUFFO+179.
+	JMP	K16432			; Copy tiles
+; Tree leaves small, 5x4 tiles
+K15610:	.BYTE	013,014,015,015,016
+	.BYTE	017,020,020,020,021
+	.BYTE	017,020,020,020,025
+	.BYTE	022,023,024,025,377
+;
+; Room marker $16 026 - LFFN2 - Rocket wing element left bottom, 2x3 tiles
+K15634:	MOV	#K15662, R4		; copy from
+	MOVB	#002, K01604		; width = 2
+	MOV	#000003, R1		; height = 3
+	MOV	#062570, R3		; BUFFB+300.
+	JMP	K16432			; Copy tiles
+; Rocket wing element left bottom, 2x3 tiles
+K15662:	.BYTE	370,370,370,321,321,000
+;
+; Room marker $17 027 - RTFN2 - Rocket wing element right bottom, 2x3 tiles
+K15670:	MOV	#K15716, R4		; copy from
+	MOVB	#002, K01604		; width = 2
+	MOV	#000003, R1		; height = 3
+	; fix +1 by X
+	MOV	#062601, R3		; BUFFB+309.
+	JMP	K16432			; Copy tiles
+
+; Rocket wing element right bottom, 2x3 tiles
+K15716:	.BYTE	370,370,320,370,000,320
+;
+; Room marker $18 030 - LEFEX 3x3 tiles
+K15724:	MOV	#K15752, R4		; copy from
+	MOVB	#003, K01604		; width = 3
+	MOV	#000003, R1		; height = 3
+	MOV	#062731, R3		; BUFFB+397.
+	JMP	K16432			; Copy tiles
+; Object in tiles 3x3 tiles
+K15752:	.BYTE	000,000,316
+	.BYTE	000,316,317
+	.BYTE	316,317,317
+	.EVEN
+;
+; Room marker $19 031 - RITEX 3x3 tiles
+K15764:	MOV	#K16012, R4		; copy from
+	MOVB	#003, K01604		; width = 3
+	MOV	#000003, R1		; height = 3
+	MOV	#062737, R3		; BUFFB+403.
+	JMP	K16432			; Copy tiles
+; Object in tiles 3x3 tiles
+K16012:	.BYTE	315,000,000
+	.BYTE	317,315,000
+	.BYTE	317,317,315
+	.EVEN
+;
+; Room marker $05 005 - RKTTP - Rocket upper part 3x4 tiles
+K16024:	MOV	#K70616, R4		; copy from ROKET
+	MOVB	#003, K01604		; width = 3
+	MOV	#000004, R1		; height = 4
+	MOV	#062334, R3		; BUFFB+144.
+	BR	K16432			; Copy tiles
+	NOP1
+; LFTRC: Object in tiles, 5x3 tiles
+K16052:	.BYTE	001,037,040,036,036
+	.BYTE	041,036,036,036,036
+	.BYTE	001,042,043,044,044
+; RTTRC: Object in tiles, 3x2 tiles
+K16071:	.BYTE	047,050,051, 036,052,053
+	.EVEN
+; Room marker $20 040 - RTTRE 3x2 tiles
+K16100:	MOV	#K16071, R4		; copy from
+	MOV	#000003, R2		; width = 3
+	MOV	#000002, R1		; height = 2
+	BR	K16234			; => SCOBD
+; Room marker $1C 034 - ??? 5x3 tiles
+K16116:	MOV	#K16052, R4		; copy from
+	MOV	#000005, R2		; width = 5
+	MOV	#000003, R1		; height = 3
+	BR	K16234			; => SCOBD
+; Room marker $14 024 - Rocket wing left top, 2x6 tiles
+K16134:	MOV	#K16170, R4
+	MOV	#000002, R2		; width = 2
+	MOV	#000006, R1		; height = 6
+	BR	K16234			; => SCOBD
+; Room marker $15 025 - Rocket wing right top, 2x6 tiles
+K16152:	MOV	#K16204, R4
+	MOV	#000002, R2		; width = 2
+	MOV	#000006, R1		; height = 6
+	BR	K16234			; => SCOBD
+; Rocket wing left top, 2x6 tiles
+K16170:	.BYTE	000,366,366,370,370,370,370,370,370,370,321,000
+; Rocket wing right top, 2x6 tiles
+K16204:	.BYTE	365,000,370,365,370,370,370,370,370,370,000,320
+;
+; Room marker $11 021 - LFTPF - Lift platform bottom
+K16220:	MOV	#070602, R4		; PLATF
+	MOV	#000001, R1		; height = 1
+	MOV	#000006, R2		; width = 6
+; SCOBD:
+K16234:	MOV	(SP), R0
+	MOVB	(R0)+, K01610		; offset low
+	MOVB	(R0), K01611		; offset high
+	MOV	R0, (SP)
+	MOV	K01610, R3		; get offset
+	ADD	#CBuffsDiffA, R3		; + base address
+K16260:	PUSH	R2			; <
+	PUSH	R3
+K16264:	MOVB	(R4)+, (R3)+		; | <
+	SOB	R2, K16264		; | repeat
+	POP	R3
+	ADD	#000040, R3		; | + 32.
+	POP	R2
+	SOB	R1, K16260		; repeat
+	JMP	K13422
+
+; ??? 3x3 tiles
+; treasure chest
+K16306:	.BYTE	026,027,030
+	.BYTE	031,032,033
+	.BYTE	034,035,036
+
+; ??? 2x2 tiles
+; hidden ladder
+K16317:	.BYTE	037,037
+	.BYTE	037,037
+	.EVEN
+
+; Room marker $1F 037 - ??? 2x2 tiles
+; room above infinite energy room, hidden ladder
+K16324:	; we will NOT hide ladder - let users know about room below
+	br	K16466
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+;	MOV	#K16317, R4		; copy from
+;	MOVB	#002, K01604		; width = 2
+;	MOV	#000002, R1		; height = 2
+;	MOV	#064235, R3
+;	BR	K16432			; Copy tiles
+
+; Room marker $1D 035 - ??? 3x3 tiles
+; infinite energy room - treasure chest
+K16350:	CLRB	<Decen+2>		; clear (DECEN+1)
+	MOV	#K16306, R4		; copy from
+	MOVB	#003, K01604		; width = 3
+	MOV	#000003, R1		; height = 3
+	MOV	#064040, R3
+	BR	K16432			; Copy tiles
+
+; Room marker $13 023 - Moon 2x2 tiles
+K16400:	MOV	#062245, R3
+	cmpb	#1, BuffB+89.		; is it 'sky' tile on background?
+	BNE	K16466			; => NWUKL
+	MOV	#K16474, R4		; copy from
+	MOVB	#002, K01604		; width = 2
+	MOV	#000002, R1
+
+; Entry point: Copy tiles; K01604 = width, R1 = height, R4 = address to copy from
+K16432:	MOV	#000040, R2		; 32. = row width
+	ADD	#CBuffsDiffA, R3		; + base address
+	PUSH	R5
+K16444:	MOVB	K01604, R5		; < width  !!MUT-ARG!!
+	PUSH	R3
+K16452:	MOVB	(R4)+, (R3)+		; | < copy tile
+	SOB	R5, K16452		; | repeat
+	POP	R3
+	ADD	R2, R3
+	SOB	R1, K16444		; repeat
+	POP	R5
+
+; NWUKL:
+K16466:	DEC	(SP)
+	JMP	K13422
+
+; Moon in tiles, 2x2 tiles
+K16474:	.BYTE	032,033
+	.BYTE	034,035
+;
+; Room marker $27 047 - Door 5x8 tiles
+K16500:	MOV	#K14106, R4		; copy from DOORC
+	MOVB	#005, K01604		; width = 5
+	MOV	#000010, R1		; height = 8.
+	MOV	#062540, R3
+	BR	K16432			; Copy tiles
+; Room marker $61 141 - ??? 11x7 tiles
+K16524:	MOV	#063023, R3
+	BR	K16662
+; Room marker $53 123 - ??? 8x4 tiles
+K16532:	MOV	#064026, R3
+	BR	K16636
+; Room marker $52 122 - ??? 10x7 tiles
+K16540:	MOV	#063263, R3
+	BR	K16602
+; Room marker $51 121 - ??? 11x7 tiles
+K16546:	MOV	#063655, R3
+	BR	K16662
+; Room marker $50 120 - ??? 10x7 tiles
+K16554:	MOV	#063255, R3
+	BR	K16602
+; Room marker $4F 117 - ??? 11x7 tiles
+K16562:	MOV	#063633, R3
+	BR	K16662
+; Room marker $4D 115 - ??? 11x7 tiles
+K16570:	MOV	#063615, R3
+	BR	K16662
+; Room marker  $40 100 - ??? 10x7 tiles
+K16576:	MOV	#063637, R3
+K16602:	MOVB	#000012, K01604		; width = 10.
+	MOV	#K17527, R4		; copy from
+	BR	K16674			; Copy tiles; height = 7
+; Room marker $39 071 - ??? 11x7 tiles
+K16616:	MOV	#063636, R3
+	BR	K16662
+; Room marker $38 070 - ??? 11x7 tiles
+K16624:	MOV	#063617, R3
+	BR	K16662
+; Room marker $4E 116 - ??? 8x4 tiles
+K16632:	MOV	#063765, R3
+K16636:	MOVB	#000010, K01604		; width = 8.
+	MOV	#K16702, R4		; copy from
+	MOV	#000004, R1		; height = 4
+	BR	K16432			; Copy tiles
+; Room marker $25 045 - ??? 11x7 tiles
+K16656:	MOV	#063666, R3
+K16662:	MOVB	#000013, K01604		; width = 11.
+	MOV	#K17412, R4		; copy from
+K16674:	MOV	#000007, R1		; height = 7
+	BR	K16432			; Copy tiles
+; Box??? 8x4 tiles
+K16702:	.BYTE	002,003,003,003,003,003,003,004
+	.BYTE	005,006,006,006,006,006,006,007
+	.BYTE	005,006,006,006,006,006,006,007
+	.BYTE	010,011,011,011,011,011,011,012
+;
+; Room marker $26 046 - FDesk?? 6x4 tiles
+K16742:	MOV	#K17362, R4		; copy from FDESC
+	MOVB	#006, K01604		; width = 6
+	MOV	#000004, R1		; height = 4
+	MOV	#064044, R3
+K16764:	JMP	K16432			; Copy tiles
+; Room marker $46 106 - BIKRD - Motorbike 11x5 tiles
+K16770:	MOVB	K17200, R0		; get BIKER
+	INCB	R0			; == 255. ?
+	BNE	K17044
+	MOV	#K17204, R4		; copy from BIKEC
+	MOVB	#000013, K01604		; width = 11.
+	MOV	#000005, R1		; height = 5
+	MOV	#063730, R3
+	BR	K16764
+; Room marker $48 110
+K17024:	MOVB	K17200, R0		; get BIKER
+	CMPB	R0, #376		; 254.
+	BNE	K17044
+	MOVB	#020, K17200		; set BIKER = 16.
+K17044:	JMP	K16466			; => NWUKL
+; ??? 4x4 tiles
+K17050:	.BYTE	211,212,212,213		; CONS2
+	.BYTE	377,377,041,377
+	.BYTE	377,377,041,377
+	.BYTE	377,377,041,377
+; ??? 5x1 tiles
+K17070:	.BYTE	322,322,323,323,325	; CONS1
+	.EVEN
+;
+; Room marker $4A 112 - FRCON 4x4 tiles
+K17076:	MOV	#063760, R3		; BUFFO+356.
+K17102:	MOV	#K17050, R4		; copy from
+	MOVB	#004, K01604		; width = 4
+	MOV	#000004, R1		; height = 4
+	JMP	K16432			; Copy tiles
+; Room marker $49 111 - BKCON Console 5x1 tiles
+K17124:	MOV	#063057, R3		; BUFFB+483.
+K17130:	MOV	#K17070, R4		; copy from
+	MOVB	#005, K01604		; width = 5
+	MOV	#000001, R1		; height = 1
+	JMP	K16432			; Copy tiles
+; Room marker $4B 113 - BCON2 Console 5x1 tiles
+K17152:	MOV	#063034, R3		; BUFFB+464.
+	BR	K17130			; => BCONC
+; Room marker $4C 114 - FCON2 4x4 tiles
+K17160:	MOV	#063735, R3		; BUFFO+337
+	BR	K17102			; => FCONC
+; Room marker $47 107
+K17166:	MOVB	#132, K37662		; set SPEED = 90.
+	JMP	K16466			; => NWUKL
+;
+K17200:	.BYTE	0, 0			; BIKER
+K17202:	.WORD	0			; BIKPS
+
+;
+@include S21E80.MAC
+;
+
+K17635:	.BYTE	000			; LETNO
+	.BYTE	000,000
+;
+; Room marker $22 042 - LETR1
+K17640:	MOV	#000001, R0
+	BR	K17660
+; Room marker $23 043 - LETR2
+K17646:	MOV	#000002, R0
+	BR	K17660
+; Room marker $24 044 - LETR3
+K17654:	MOV	#000003, R0
+K17660:	MOVB	R0, K17635		; set LETNO
+	BR	K17746
+;
+K17666:	.ASCII	/OLONEL BRIGGSY  EX/	; LETC2
+K17710:	.ASCII	/PLORER/
+K17716:	.WORD	0			; BIKMR
+K17720:	.ASCII	/ BIKE ARRIVED /	; BIKAM
+;
+; Room marker $1A 032 - REDOF
+K17736:	MOV	#000240, R0		; NOP command
+K17742: ; MOV	R0, K04114
+	nop
+	nop
+K17746:	DEC	(SP)
+	JMP	K13422			; => RETRT
+; Room marker $1B 033 - REDON
+K17754:	MOV	#110013, R0		; "MOVB R0,(R3)" command
+K17760:	BR	K17742
+
+; Room marker $03 003 - FILLB - Fill the whole room with tile
+K17762:	MOV	(SP), R3
+	CLR	R0
+	BISB	(R3), R0		; get tile
+	SWAB	R0
+	BISB	(R3), R0		; get same tile again
+	MOV	#BuffB, R3		; BUFFB Back tile screen address
+	MOV	#000110, R1		; 72. * 8. = 576.
+K20004:	MOV	R0, (R3)+		; < fill 2 tiles
+	MOV	R0, (R3)+		; | fill 2 tiles
+	MOV	R0, (R3)+		; | fill 2 tiles
+	MOV	R0, (R3)+		; | fill 2 tiles
+	SOB	R1, K20004		; repeat
+	JMP	K13422
+
+; Room marker $04 004 - ONECR - Fill one tile
+K20022:	POP	R3
+	MOVB	(R3)+, R0
+	MOVB	(R3)+, K01606
+	MOVB	(R3), K01607
+	PUSH	R3
+	MOV	K01606, R3
+	ADD	#CBuffsDiffA, R3		; + base address
+	MOVB	R0, (R3)
+	JMP	K13422
+; Room marker $0F 017 - TLDTN
+K20056:	MOV	#000312, R0		; 202.
+	POP	R3
+	MOVB	(R3)+, K01606
+	MOVB	(R3), K01607
+	PUSH	R3
+	MOV	K01606, R3
+	ADD	#CBuffsDiffA, R3		; + base address
+	MOVB	R0, (R3)+
+	INCB	R0
+	MOVB	R0, (R3)
+	JMP	K13422
+
+; 
+; Room marker $00 000 - HORLN - Fill horizontally W with tile
+K20120:	MOV	#000001, R2
+	BR	K20156
+
+;
+K20126:	.WORD	153006,062206		; height = 6, tile = 326, offset lo, offset hi
+;
+; Room marker $45 105 - Fill diagonally right-down with tile 326, height 6
+K20132:	MOV	#K20126, (SP)
+; Room marker $06 006 - Fill diagonally right-down
+K20136:	MOV	#000041, R2		; offset = 33.
+	BR	K20156			; go fill
+; Room marker $07 007 - Fill diagonally left-down
+K20144:	MOV	#000037, R2		; offset = 31.
+	BR	K20156			; go fill
+; Room marker $01 001 - Fill vertically H with tile
+K20152:	MOV	#000040, R2		; offset = 32.
+K20156:	POP	R0
+	CLR	R1
+	BISB	(R0)+, R1		; get height
+	MOVB	(R0)+, K01604		; get tile
+	MOVB	(R0)+, K01610		; get offset low
+	MOVB	(R0), K01611		; get offset hi
+	PUSH	R0
+	MOV	K01610, R3		; offset
+	ADD	#CBuffsDiffA, R3		; + base address
+	MOVB	K01604, R0		; tile
+K20216:	MOVB	R0, (R3)		; < put tile
+	ADD	R2, R3			; | + offset
+	SOB	R1, K20216		; repeat
+	JMP	K13422
+; Room marker $21 041 - GRLAD - Black on green ladder
+K20230:	MOVB	#054, K01604		; 44.
+	BR	K20266
+; Room marker $0E 016 - Wide white ladder
+K20240:	MOVB	#011, K01604		; 9.
+	BR	K20266
+; Room marker $1E 036 - Black ladder
+K20250:	MOVB	#045, K01604		; 37.
+	BR	K20266
+; Room marker $08 010 - White ladder
+K20260:	MOVB	#005, K01604		; 5.
+K20266:	MOV	#000037, R2		; 31.
+	POP	R0
+	CLR	R1
+	BISB	(R0)+, R1		; get height
+	MOVB	(R0)+, K01610		; get offset low
+	PUSH	R0
+	MOVB	(R0), K01611		; get offset hi
+	MOV	K01610, R3		; offset
+	ADD	#CBuffsDiffA, R3		; + base address
+	MOVB	K01604, R0		; get tile
+K20326:	MOVB	R0, (R3)+		; < put tile
+	INCB	R0			; | next tile
+	MOVB	R0, (R3)		; | put tile
+	DECB	R0			; | prev tile
+	ADD	R2, R3			; | + offset
+	SOB	R1, K20326		; repeat
+	JMP	K13422
+; Room marker $09 011 - ROCKS - Supertile, 8x6 tiles
+K20346:	MOV	#BuffB, R2		; BUFFB Back tile screen address
+	MOV	#000003, R1
+10$:	MOV	#004, (PC)+
+12$:	.word	4
+20$:	POP	R3
+	CLR	R0
+	BISB	(R3)+, R0		; get Supertile number
+	PUSH	R3
+	PUSH	R2
+	CALL	ExxPro			; EXX
+	ASL	R0			; *2
+	MOV	K20466(R0), R3		; get Supertile address from the table
+	POP	R2
+	MOV	#000006, R1		; height 6
+30$:	MOV	#000010, R5		; <  width 8.
+40$:	MOVB	(R3)+, (R2)+		;   <  copy tile number
+	SOB	R5, 40$			;   repeat
+	ADD	#000030, R2		;   next line
+	SOB	R1, 30$			; repeat
+	CALL	ExxPro			; EXX
+	ADD	#000010, R2		; + 8.
+	DEC	12$
+	BNE	20$
+	ADD	#000240, R2
+	SOB	R1, 10$			; repeat
+	DEC	(SP)
+	JMP	K13422
+
+;
+; Supertiles and Stashes
+@include S2TILE.MAC
+;
+
+K23746:	.WORD	0			; NERST
+K23750:	.BYTE	000			; TEMPN
+	.EVEN
+;
+; Room marker $0B 013 - DIBL2 - Fill triangle up-right
+K23752:	MOV	#177740, R3
+	BR	K24010
+; Room marker $0C 014 - DIBL3 - Fill triangle right-up
+K23760:	MOV	#177741, R3
+	BR	K24010
+; LFTDT:
+K23766:	.WORD	163406
+	.WORD	62146			; BUFFB+26
+; Room marker $44 104 - LFTDI
+K23772:	MOV	#K23766, (SP)		; LFTDT
+; Room marker $0D 015 - DIBL4 - Fill triangle right-down
+K23776:	MOV	#000041, R3		; 33.
+	BR	K24010			; => DIBLK
+; Room marker $0A 012 - DIBL1 - Fill triangle down-right
+K24004:	MOV	#000040, R3		; 32.
+K24010:	MOV	R3, <K24062+2>		; set (DIBLD+1)
+	POP	R0
+	CLR	R2
+	BISB	(R0)+, R2
+	MOV	R2, R1
+	MOVB	(R0)+, R5
+	MOVB	(R0)+, K01610
+	PUSH	R0
+	MOVB	(R0), K01611
+	MOV	K01610, R3
+	ADD	#CBuffsDiffA, R3		; + base address
+K24050:	PUSH	R2			; <
+	PUSH	R3
+K24054:	MOVB	R5, (R3)+
+	SOB	R2, K24054		; repeat
+	POP	R3
+K24062:	ADD	#000040, R3		;!!MUT-ARG!!
+	POP	R2
+	DEC	R2
+	BIC	#177400, R2		; low byte
+	SOB	R1, K24050		; repeat
+	JMP	K13422			; => RETRT
+
+; Room marker $02 002 - BLOCK - Fill rectangle WxH with tile
+K24104:	POP	R0			;
+	CLR	R2
+	BISB	(R0)+, R2		; get width
+	CLR	R1
+	BISB	(R0)+, R1		; get height
+	MOVB	(R0)+, R5		; get tile index
+	MOVB	(R0)+, K01610		; get offset low
+	PUSH	R0
+	MOVB	(R0), K01611		; get offset high
+	MOV	K01610, R3		; offset
+	ADD	#CBuffsDiffA, R3		; + base address
+K24142:	PUSH	R2			; <
+	PUSH	R3
+K24146:	MOVB	R5, (R3)+		; | <  put one tile
+	SOB	R2, K24146		; | repeat
+	POP	R3
+	ADD	#000040, R3		; | next row
+	POP	R2
+	SOB	R1, K24142		; repeat
+	JMP	K13422			; => RETRT
+;
+; SPARES table, 22. records
+;   +000: room level (compared to RMDN)
+;   +001: room position (compared to RMAC)
+;   +002: index in ROUTS table (markers)
+K24170:
+	.BYTE	033, 007, 106		; Motorbike
+	.BYTE	000, 014, 107		; Increase glider distance
+	.BYTE	033, 000, 110		; Auto run on final screen
+	.BYTE	026, 030, 113		; Console
+	.BYTE	026, 030, 114
+	.BYTE	033, 016, 113		; Console
+	.BYTE	033, 016, 114
+	.BYTE	015, 016, 136
+	.BYTE	033, 015, 070
+	.BYTE	033, 011, 071
+	.BYTE	033, 005, 053
+	.BYTE	007, 033, 070
+	.BYTE	022, 031, 100
+	.BYTE	031, 014, 100
+	.BYTE	017, 034, 070
+	.BYTE	017, 005, 070
+	.BYTE	017, 034, 100
+	.BYTE	015, 003, 103
+	.BYTE	023, 036, 101
+	.BYTE	035, 037, 102
+	.BYTE	026, 026, 104
+	.BYTE	026, 026, 105
+;
+; RMDUN: End of the room sequence
+K24272:	MOV	#K24352, <K13422+2>	; set return point = RETRX
+	MOV	#K24170, R4		; SPARES table address
+	MOV	#000032, R1		; 26.
+; SPART:
+K24310:	CMPB	K36214, (R4)		; <  check RMDN
+	BNE	K24360			; => SPARW
+	CMPB	K36215, 000001(R4)	; check RMAC
+	BNE	K24360			; => SPARW
+	CLR	R0
+	BISB	000002(R4), R0		; get byte +002
+	ASL	R0
+	MOV	K13426(R0), R3		; get addr from ROUTS table
+	PUSH	R4
+	PUSH	R1
+	PUSH	R3
+	JMP	(R3)
+; RETRX:
+K24352:	POP	R3
+	POP	R1
+	POP	R4
+; SPARW:
+K24360:	ADD	#000003, R4		; next record
+	SOB	R1, K24310		; repeat
+	MOV	#K13414, <K13422+2>	; BAKWD
+	CMPB	K36214, #037		; RMDN == 31. ?
+	BNE	K24436			; no => NWATR
+; Room level = 31. = lower level with water
+	MOV	#000400, R1		; 256.
+	mov	#BuffB+543., R3
+	mov	#BuffO+543., R2
+; WATER:
+K24420:	CMPB	(R3), #000307		; 199.
+	BHIS	K24430			; => NTWCR
+	CLRB	(R2)
+; NTWCR:
+K24430:	DEC	R3
+	DEC	R2
+	SOB	R1, K24420		; repeat => WATER
+; NWATR:
+K24436:	MOV	#K23030, R4		; NROBT address - Stashes
+	MOV	#000041, R1		; 33. records
+; NROBL:
+K24446:	CMPB	K36214, (R4)		; <  == RMDN room level
+	BNE	K24556			; no => NNOOS
+	CMPB	K36215, 000001(R4)	; == RMAC ?
+	BNE	K24556			; no => NNOOS
+	MOVB	000002(R4), K01610
+	MOVB	000003(R4), K01611
+	MOV	K01610, R3
+	ADD	#CBuffsDiffA, R3		; + base address
+	MOVB	(R3), R0
+	INCB	R0
+	BNE	K24530			; => YOGRT
+	MOVB	#051, (R3)		; 41. - draw left of stash box
+	MOVB	#052, 000001(R3)	; 42. - draw right of stash box
+; YOGRT:
+K24530:	SUB	#001100, R3		; <BUFFB-BUFFO>
+	MOVB	#000144, (R3)+		; 100. - stash background flag
+	MOVB	#000144, (R3)		; 100.
+	MOV	R4, R3
+	ADD	#000004, R3
+	MOV	R3, K23746		; set NERST
+; NNOOS:
+K24556:	ADD	#000016, R4		; + 14. to next record
+	SOB	R1, K24446		; repeat => NROBL
+	CALL	DrawScreen		; DOPIC - Show the room on the screen
+
+; rocket text printing on screen 'colonel briggsy..' whatsoever
+; removed by me, looks awfull
+
+	br	K24764
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	
+; PLATR procedure
+K24712:	MOV	K24746, R3		; PLAPS
+	MOV	#000004, R1		; 4.
+K24722:	MOVB	(R2)+, (R3)+		; <
+	SOB	R1, K24722		; repeat
+	SUB	#001100, R3
+	MOV	#000004, R1
+K24736:	MOVB	#001, -(R3)		; <
+	SOB	R1, K24736		; repeat
+	RETURN
+;
+K24746:	.BYTE	041, 255		; PLAPS
+K24750:	.BYTE	000			; PLADI
+K24751:	.BYTE	012			; PLADS
+K24752:	.BYTE	157, 157, 157, 157	; BPLAT
+K24756:	.BYTE	322, 323, 323, 325	; FPLAT
+K24762:	.BYTE	000, 000		; DEFGH
+
+;
+; NXMAN:
+K24764:	CALL	ClearBuffNina		; BUFCL Fill Ninja tile screen
+
+	; clear 'was changed' buf (already cleared in drawing proc)
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+
+	; flamethrower tiles update (stop after use once)
+K25006:	mov	#000000, R1
+	beq	K25040
+K25012:	mov	#BuffG1, R3			; guard 1 by default ?
+	sub	#004400, R3
+	mov	#000001, R0
+K25026:	movb	R0, (R3)
+K25030:	inc	R3				; | !!MUT-CMD!!
+	sob	R1, K25026
+	clr	K25006+2
+K25040:
+
+; is it a top lift room?
+; put sign every frame (bad thing, but ok)
+	MOV	K13332+2, R3			; (RM+1)
+	CMPB	(R3), #072			; room type == $3A (58.) ? lift top
+	BNE	K25072
+	MOV	#000006, R1			; 6.
+	MOV	#K26660, R2			; " LIFT "
+	mov	#BuffO+97., R3
+	CALL	PrintOnBgr			; BUFOM - Draw string as tiles
+
+; is it lift bottom room?
+K25072:	CMPB	(R3), #074			; room type == $3C (60.) ? lift bottom
+	BNE	K25120
+	MOV	#000006, R1			; 6.
+	MOV	#K26660, R2			; " LIFT "
+	mov	#BuffO+108., R3
+	CALL	PrintOnBgr			; BUFOM - Draw string as tiles
+
+; room 158. ??? moving platform room
+K25120:	CMPB	(R3), #000236
+	BNE	K25216
+	MOV	#K24752, R2
+	CALL	K24712				; PLATR
+	MOV	#K24751, R3
+	TSTB	K24750
+	BEQ	K25172
+	INCB	(R3)
+	INC	K24746
+	CMPB	#023, (R3)
+	BNE	K25206
+	DECB	K24750
+	BR	K25206
+K25172:	DEC	K24746
+	DECB	(R3)
+	BNE	K25206
+	INCB	K24750
+K25206:	MOV	#K24756, R2
+	CALL	K24712				; PLATR
+
+K25216:	CALL	L10200				; GTBAK
+	CALL	K36220				; MANAR
+	CALL	L10236				; GTBK2
+	CLR	R1
+	CMPB	K50156, #144			; == 100. ?							; (!!!)
+	BNE	K25250
+	MOVB	@K23746, R1			; get new NEAR value
+; KIPER
+K25250:	MOV	R1, R0				; R0 = object near
+	MOV	#K33465, R3			; NEAR value address
+	MOVB	(R3), R5			; get NEAR value
+	MOVB	R0, (R3)			; set new NEAR value
+	CMPB	R0, R5				; compare old/new NEAR values
+	BEQ	K25272				; same, no need to update => jump
+	CALL	DrawNear			; NERDR - update NEAR indicator
+; VECTN:
+K25272:	JMP	@#000000			;!!MUT-ARG!!
+; ENDVC:
+K25276:	CALL	K36266				; MANDR
+	CALL	K36220				; MANAR
+	CALL	ClearBuffGuards			; BUFC2 Fill Enemy 0/1 tile screens
+	MOVB	K36211, R0			; get MAND
+	ADD	#000007, R0			; + 7.
+	CMPB	R0, #000010			; == 8. ?
+	BLO	K25362				; => NDRON
+	MOV	K36212, R3			; get MANPS
+	mov	#BuffO+34., R2
+	CALL	K55630				; LFEDQ
+	ADD	R2, R3
+	MOV	#000002, R1
+	TSTB	(R3)
+K25354:	BNE	K25362
+;	call	Decen				; ???
+	nop
+	nop
+
+; NDRON:
+K25362:	MOVB	K77520, R0			; get GLGP1
+	INCB	R0
+	BIC	#177774, R0
+	MOVB	R0, K77520
+	ASL	R0
+	MOV	K77506(R0), K77516
+	MOVB	K77530, R0		; get DLGP1
+	INCB	R0
+	CMPB	R0, #003
+	BNE	K25426
+	CLR	R0
+; GYGYU:
+K25426:	MOVB	R0, 077530										; (!!!)
+	ASL	R0
+	MOV	K77522(R0), R3		; DLGTB
+	MOV	R3, <K27556+2>
+	MOV	#033543, R4
+	MOV	#000145, R1
+K25454:	PUSH	R1
+	MOV	#000007, R1
+	MOVB	#006, K01604
+	MOVB	000013(R4), R0
+	CMPB	R0, #000001		; == 1 ?
+	BNE	K25506
+	CALL	K32176			; PANTS
+K25506:	CMPB	R0, #000006		; == 6. ?
+	BNE	K25520
+	CALL	K32176			; PANTS
+K25520:	CMPB	R0, #000004		; == 4 ?
+	BNE	K25532
+	CALL	K32176			; PANTS
+K25532:	CMPB	R0, #000011		; == 9. ?
+	BNE	K25544
+	CALL	K32176			; PANTS
+K25544:	CMPB	R0, #000012		; == 10. ?
+	BNE	K25556
+	CALL	K32176			; PANTS
+K25556:	CALL	K36072			; G1DI2
+	CALL	K26572			; LPRSY
+	MOV	R4, R3
+	ADD	#000003, R3
+	MOV	R3, 047720										; (!!!)
+	MOV	R3, 055316										; (!!!)
+	MOVB	K36214, R1		; get RMDN room level
+	MOVB	(R4), R0
+	BIC	#177600, R0
+	CMPB	R0, R1
+	BNE	K25646
+	CMPB	K36215, 000002(R4)	; check RMAC
+	BNE	K25646			; => NDRGA
+	CALL	L10200			; GTBAK
+	CALL	K36112			; GRDAR
+	CALL	L10236			; GTBK2
+; NDRGA:
+K25646:	MOVB	K36214, R1		; get RMDN room level
+	MOVB	(R4), R0
+	BIC	#177600, R0
+	SUB	R1, R0
+	ADD	#000003, R0
+	CMPB	R0, #000006
+	BLO	K25700
+	JMP	K30606
+K25700:	MOVB	K36215, R0		; get RMAC
+	CLR	R5
+	BISB	000002(R4), R5
+	SUB	R5, R0
+	ADD	#000006, R0
+	CMPB	R0, #000014
+	BLO	K25732
+	JMP	K30606
+K25732:	CMPB	000013(R4), #000002
+	BLO	K25746
+	JMP	K26310
+K25746:	MOVB	000001(R4), R1
+	MOVB	000004(R4), K01611
+	MOVB	000003(R4), K01610
+	MOV	K01610, R3
+	MOVB	#177777, K01607
+	TSTB	(R4)
+	BPL	K26060
+	CALL	Random			; Get random number
+	BIC	#177774, R0		; 0..3
+	BEQ	K26060
+	INCB	K01607
+	MOVB	000001(R4), R0
+	ADD	#000012, R0
+	MOVB	R0, K01606
+	MOVB	K36210, R0		; get MANA
+	ADD	#000012, R0
+	CMPB	R0, K01606
+	BHIS	K26060
+	INCB	K01607
+; GTRO2:
+K26060:	TSTB	K36264			; check DIR
+	BEQ	K26210
+	CMPB	000002(R4), 000005(R4)
+	BNE	K26160
+	CMPB	000006(R4), R1
+	BNE	K26160
+; STFFQ:
+K26104:	DECB	K01607
+	BEQ	K26132
+	MOVB	000013(R4), R0
+	ASL	R0
+	ADD	#000007, R0
+; NIKMC:
+K26124:	MOVB	R0, 000013(R4)
+	BR	K26310			; => NWALK
+; SETFF:
+K26132:	CALL	Random			; Get random number
+	BIC	#177770, R0		; 0..7
+	ADD	#000003, R0		; + 3
+	MOVB	R0, K26670
+	MOV	#000014, R0		; 12.
+	BR	K26124			; => NIKMC
+; KONT1:
+K26160:	DECB	R1
+	DEC	R3
+	CMPB	#000374, R1
+	BNE	K26264			; => WKOK
+	MOV	#000034, R1
+	ADD	#000040, R3
+	DECB	000002(R4)
+	BR	K26264			; => WKOK
+; GWRIT
+K26210:	CMPB	000002(R4), 000007(R4)
+	BNE	K26236
+	CMPB	000010(R4), R1
+	BNE	K26236
+	INCB	K01607
+	JMP	K26104
+; KONT2:
+K26236:	INCB	R1
+	INC	R3
+	CMPB	#000036, R1
+	BNE	K26264			; => WKOK
+	MOV	#000376, R1
+	SUB	#000040, R3
+	INCB	000002(R4)
+; WKOK
+K26264:	MOV	R3, K01610
+	MOVB	K01610, 000003(R4)
+	MOVB	K01611, 000004(R4)
+	MOVB	R1, 000001(R4)
+; NWALK:
+K26310:	MOVB	K36214, R1		; get RMDN room level
+	MOVB	(R4), R0
+	BIC	#177600, R0
+	CMPB	R0, R1
+	BEQ	K26332
+	JMP	K30606
+K26332:	CMPB	K36215, 000002(R4)	; check RMAC
+	BEQ	K26346
+	JMP	K30606
+K26346:	CALL	L10200			; GTBAK
+	CALL	K36112			; GRDAR
+	CALL	L10236			; GTBK2
+	MOV	#000001, R0
+	TSTB	000011(R4)
+	BPL	K26376
+	INC	R0
+; LEEE9:
+K26376:	MOV	#K26672, R3		; GDHIT address
+	CMPB	R0, (R3)
+	BNE	K26546			; => NGDHT
+	MOVB	000013(R4), R0
+	CMPB	R0, #000005
+	BEQ	K26546			; => NGDHT
+	CMPB	R0, #000006
+	BEQ	K26546			; => NGDHT
+	MOV	#000002, R1		; 2.
+	CALL	L10244			; MONUP
+	call	Sound2
+;	CALL	L15650			; Sound CRUNCH noise
+	MOV	#026666, R3
+	DECB	(R3)
+	BEQ	K26464			; CRUSN
+	CALL	Random			; Get random number
+	BIC	#177774, R0
+	BNE	K26546			; => NGDHT
+; CRUSN:
+K26464:	MOVB	#005, (R3)
+	MOVB	000013(R4), R0
+	MOV	#000006, R1
+	CMPB	R0, #000004		; == 4 ?
+	BEQ	K26532			; => ABRSE
+	CMPB	R0, #000001		; == 1 ?
+	BEQ	K26532			; => ABRSE
+	CMPB	R0, #000011		; == 9. ?
+	BEQ	K26532			; => ABRSE
+	CMPB	R0, #000012		; == 10. ?
+	BEQ	K26532			; => ABRSE
+	DECB	R1
+; ABRSE:
+K26532:	MOVB	R1, 000013(R4)
+	MOV	#000012, R1		; 10.
+	CALL	L10244			; MONUP
+; NGDHT:
+K26546:	CLR	R0
+	BISB	000013(R4), R0
+	ASL	R0
+	MOV	K26626(R0), R3		; get address from NMERT table
+	MOVB	K36264, R0		; get DIR
+	MOVB	R0, R1
+	JMP	(R3)
+; LPRSY procedure
+K26572:	TSTB	000011(R4)
+	BMI	K26602
+	RETURN
+K26602:	SWAB	K26670
+	MOV	K26674, R3
+	MOV	K26676, K26674
+	MOV	R3, K26676
+	RETURN
+;
+; NMERT table jump addresses
+K26626:
+	.WORD	K26720, K27470, K27670, K30324, K30422, K30310, K30316, K30222
+	.WORD	K30236, K30260, K30274, K30406, K30014
+K26660:	.ASCII	/@LIFT@/
+K26666:	.BYTE	5			; GDNRG
+K26667:	.BYTE	0			; GDSPD
+K26670:	.WORD	000000
+K26672:	.WORD	000000			; GDHIT ??
+K26674:	.WORD	000000
+K26676:	.WORD	000000
+; BATPM
+K26700:	.WORD	000012, 004012, 000012, 000010, 004010, 000011, 004011, 000011
+
+; GDRNP:
+K26720:	mov	#BuffN+101., R3
+	TSTB	R0
+	BEQ	K26734
+	mov	#BuffN+96., R3
+K26734:	MOVB	000003(R4), K01606
+	MOVB	000004(R4), K01607
+	ADD	K01606, R3
+	MOVB	050137, R0
+	INCB	R0
+	BEQ	K27026			; => NGDPP
+	MOVB	(R3), R0
+	INCB	R0
+	BEQ	K27026			; => NGDPP
+	MOV	R3, K26674
+	MOVB	#002, 000013(R4)
+	MOVB	#003, K26670
+	CALL	Random			; Get random number
+	RORB	R0
+	BLO	K27026
+	JMP	K27460			; => NGDKP
+; NGDPP:
+K27026:	MOVB	050131, R0		; get (MANBF+17.)
+	INCB	R0
+	BEQ	K27106
+	mov	#BuffN+69., R3		; BUFFN+something
+	TSTB	R1
+	BEQ	K27052
+	mov	#BuffN+64., R3		; BUFFN+something
+K27052:	ADD	K01606, R3
+	MOVB	(R3), R0
+	INCB	R0
+	BEQ	K27106
+	MOV	R3, K26674
+	MOVB	#002, K26670
+	MOVB	#000013, 000013(R4)
+	BR	K27460
+K27106:	CALL	Random			; Get random number
+	BIC	#177770, R0		; 0..7
+	BNE	K27454
+	MOVB	K33475, R0
+	BNE	K27454
+	MOVB	K50110+26, R0
+	INCB	R0
+	BEQ	K27454
+; Check relative heights (is it worth throwing dagger?)
+K27136:	MOV	#K36211, R3		; MAND
+	MOVB	000011(R4), R0
+	BIC	#177700, R0
+	MOVB	(R3), R5
+	SUB	R5, R0
+	ADD	#000004, R0
+	CMPB	R0, #000011
+	BHIS	K27454
+	MOVB	000003(R4), K01610
+	MOVB	000004(R4), K01611
+	MOV	K01610, R3
+	ADD	#000144, R3
+	MOVB	#004, K01605
+	MOVB	#000010, K01604
+	CLRB	K01607
+	MOVB	000001(R4), R0
+	ADD	#000012, R0
+	MOVB	R0, K01606
+	MOVB	K36210, R0		; get MANA
+	ADD	#000012, R0
+	CMPB	R0, K01606
+	BHIS	K27316
+	MOVB	#001, K01605
+	MOVB	#004, K01604
+	MOVB	#001, K01607
+	DEC	R3
+	DEC	R3
+	DEC	R3
+; GTROK:
+K27316:	MOVB	K36264, R0		; get DIR
+	CMPB	R0, K01607
+	BNE	K27454
+	MOVB	000001(R4), R0
+	MOVB	K01605, K36202
+	ADD	K36202, R0
+	MOVB	R0, K33477
+	MOV	R3, K01610
+	MOVB	K01610, K33500
+	MOVB	K01611, K33501
+	MOVB	K01604, R0
+	MOVB	R0, K33502
+	MOVB	R0, K33503
+	MOVB	#000324, K33475
+	MOVB	000011(R4), R0
+	BIC	#177700, R0
+	ADD	#000003, R0
+	MOVB	R0, K33476
+	MOVB	#002, 000013(R4)
+	MOVB	#001, K26670
+	BR	K27460
+	NOP1
+; NGTRO:
+K27454:	CALL	K27566			; TURNQ
+K27460:	MOV	K77516, R3
+	JMP	K30450			; => ENDGP
+;
+K27470:	mov	#BuffN+38., R3		; BUFFN+something
+	TSTB	R1
+	BEQ	K27504
+	mov	#BuffN+33., R3		; BUFFN+something
+K27504:	MOVB	050127, R0
+	INCB	R0
+	BEQ	K27552
+	MOVB	000003(R4), K01606
+	MOVB	000004(R4), K01607
+	ADD	K01606, R3
+	MOVB	(R3), R0
+	INCB	R0
+	BEQ	K27552
+	MOVB	#004, 000013(R4)
+	BR	K27556
+K27552:	CALL	K27566			; TURNQ
+K27556:	MOV	#000000, R3
+	JMP	K30450			; => ENDGP
+; TURNQ procedure
+K27566:	CALL	Random			; Get random number
+	BIC	#177774, R0		; 0..3
+	BEQ	K27602
+	RETURN
+K27602:	MOVB	K36210, R0		; get MANA
+	ADD	#000004, R0
+	MOVB	000001(R4), R5
+	SUB	R5, R0
+	MOV	#000001, R1
+	SUB	#000004, R0
+	TSTB	R0
+	BMI	K27636
+	DECB	R1
+; TRNLF:
+K27636:	MOVB	K36264, R0		; get DIR
+	CMPB	R0, R1
+	BNE	K27650
+	RETURN
+K27650:	MOVB	000013(R4), R0
+	ASL	R0
+	ADD	#000007, R0
+	MOVB	R0, 000013(R4)
+	RETURN
+; GDPNP:
+K27670:	MOV	#K26670, R3
+	CMPB	#000002, (R3)
+	BNE	K27734
+	PUSH	R3
+	MOV	K26674, R3
+	MOVB	(R3), R0
+	INCB	R0
+	BEQ	K27732
+	CALL	L15650			; Sound CRUNCH noise
+	MOVB	#000014, R1
+	CALL	Decen			; DECEN
+; NUN52:
+K27732:	POP	R3
+; NUN1:
+K27734:	DECB	(R3)
+	BNE	K27744
+	CLRB	000013(R4)
+; LEEEE:
+K27744:	MOV	#K76606, R3		; GDPNC
+	JMP	K30450			; => ENDGP
+; FFIRE:
+K27754:	.BYTE	243, 244
+	.BYTE	244, 244
+	.BYTE	244, 244
+	.BYTE	244, 244
+	.BYTE	244, 245
+
+; RND procedure
+K27766:	jmp	Random
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+
+; GDFFP:
+K30014:	mov	#BuffG1+102., R2	; BUFG1+102.
+	MOV	#105205, R5		; command ??
+	MOV	#005203, R0		; command ??
+	CMPB	K36264, #001		; DIR == 1 ?
+	BNE	K30054
+	mov	#BuffG1+95., R2		; BUFG1+95.
+	MOV	#105305, R5		; command ??
+	MOV	#005303, R0		; command ??
+K30054:	MOV	R0, K30170		; set FLDID command
+	MOV	R0, K25030
+	MOV	R5, K30174
+	MOVB	000001(R4), R5
+	DECB	R5
+	MOVB	000003(R4), K01610
+	MOVB	000004(R4), K01611
+	MOV	K01610, R3
+	ADD	R2, R3
+	MOV	R3, K25012+2		; FLDIR
+	MOV	#K27754, R2
+	MOV	#000012, R1
+	MOV	R1, K25006+2
+K30140:	CMPB	R5, #000031
+	BHIS	K30170			; => FLDID
+	MOVB	174500(R3), R0
+	CMPB	R0, #000307		; 199.
+	BHIS	K30200
+	MOVB	(R2), (R3)
+	MOVB	#001, 173400(R3)
+; FLDID:
+K30170:	INC	R3			;WARN
+	INC	R2
+K30174:	INCB	R5
+	SOB	R1, K30140		; repeat
+K30200:	DECB	K26670
+	BNE	K30214
+	MOVB	#007, 000013(R4)
+K30214:	MOV	#K76606, R3		; GDPNC
+	BR	K30450
+;
+K30222:	MOVB	#000010, 000013(R4)
+	MOV	#077261, R3
+	BR	K30450
+;
+K30236:	CLRB	000013(R4)
+	MOV	#077261, R3
+K30246:	MOV	#000001, R0
+	XOR	R0, K36264		; DIR
+	BR	K30450
+; DTRN1:
+K30260:	MOVB	#000012, 000013(R4)
+	MOV	#077037, R3
+	BR	K30450			; => ENDGP
+; DTRN2:
+K30274:	MOVB	#001, 000013(R4)
+	MOV	#077037, R3
+	BR	K30246			; => ANRKE
+; DEDGP:
+K30310:	MOV	#077403, R3		; GDEDC - dead guard titles
+	BR	K30450
+;
+K30316:	MOV	#077455, R3
+	BR	K30450
+; GDKCP:
+K30324:	MOV	#K26670, R3
+	CMPB	#000001, (R3)
+	BNE	K30370
+	PUSH	R3
+	MOV	K26674, R3
+	MOVB	(R3), R0
+	INCB	R0
+	BEQ	K30366
+	CALL	L15650			; Sound CRUNCH noise
+	MOV	#000007, R1
+	CALL	Decen			; DECEN
+; NUN25:
+K30366:	POP	R3
+K30370:	DECB	(R3)
+	BNE	K30400
+	CLRB	000013(R4)
+K30400:	MOV	#077333, R3		; GKIKC
+	BR	K30450
+; GDLLP:
+K30406:	MOVB	#003, 000013(R4)
+	MOV	#K76657, R3		; GDLLC
+	BR	K30450
+;
+K30422:	CALL	L15650			; Sound CRUNCH noise
+	MOVB	#006, R1		; 6.
+	CALL	Decen			; DECEN
+	MOVB	#001, 000013(R4)
+	MOV	#076757, R3		; DOGL2
+; ENDGP:
+K30450:	MOV	R3, <K30534+2>
+	MOV	#K36037, R3
+	TSTB	000011(R4)
+	BPL	K30470
+	INC	R3
+K30470:	MOVB	K36264, (R3)		; copy DIR
+	MOVB	000003(R4), K01610
+	MOVB	000004(R4), K01611
+	MOV	K01610, R3
+	MOV	#BuffG1, R2		; Enemy 0 tile screen address
+	TSTB	000011(R4)
+	BPL	K30532
+	MOV	#BuffG2, R2		; Enemy 1 tile screen address
+K30532:	ADD	R2, R3
+K30534:	MOV	#000000, R2
+K30540:	MOV	#000007, R1
+	MOVB	030604, K01604										; (!!!)
+	MOVB	000011(R4), R0
+	BIC	#177600, R0
+	MOVB	R0, K01607
+	MOVB	000001(R4), R0
+	CALL	K47660			; DRWOB
+	CALL	K36112			; GRDAR
+	BR	K30756			; => NDRGB
+;
+K30604:	.WORD	6			; ??
+;
+; NOTOS:
+K30606:	MOVB	000013(R4), R0
+	CMPB	R0, #000014		; == 12. ?
+	BNE	K30630
+	MOVB	#007, 000013(R4)
+	BR	K30756
+K30630:	CMPB	R0, #000013
+	BEQ	K30752
+	CMPB	R0, #000011
+	BNE	K30664
+	MOV	#000001, R0
+	XOR	R0, K36264		; DIR
+	MOVB	#001, 000013(R4)
+	BR	K30756
+K30664:	CMPB	R0, #000007
+	BNE	K30704
+	MOV	#000001, R0
+	XOR	R0, K36264		; DIR
+	BR	K30752
+K30704:	CMPB	R0, #000006
+	BEQ	K30756
+	CMPB	R0, #000004
+	BNE	K30730
+K30720:	MOVB	#001, 000013(R4)
+	BR	K30756
+; LEEE7:
+K30730:	CMPB	R0, #000005
+	BEQ	K30756
+	CMPB	R0, #000012
+	BEQ	K30720
+	CMPB	R0, #000002
+	BLO	K30756
+; FINGR:
+K30752:	CLRB	000013(R4)
+K30756:	MOV	#K36212, R3		; MANPS address
+	MOV	R3, 047720									; (!!!)
+	MOV	R3, 055316									; (!!!)
+	CALL	K36072			; G1DI2
+	CALL	K26572			; LPRSY
+	ADD	#000014, R4		; + 12.
+	MOV	#050115, R3
+	MOV	R3, 055312									; (!!!)
+	MOVB	#005, R0
+	MOVB	R0, 055334									; (!!!)
+	INCB	R0
+	MOVB	R0, K30604
+	MOVB	R0, K36200
+	INCB	R0
+	MOVB	R0, <K30540+2>
+	INCB	R0
+	MOVB	R0, <K36142+2>
+	MOVB	#000014, R0
+	MOVB	R0, 055452									; (!!!)
+	MOVB	R0, 055436									; (!!!)
+	MOVB	#000032, R0
+	MOVB	R0, 055446									; (!!!)
+	MOVB	R0, 055432									; (!!!)
+	POP	R1
+	DECB	R1
+	BEQ	K31116
+	JMP	K25454			; => NXGRD
+K31116:	CLRB	K26672			; clear GDHIT
+
+; treasure chest flashing attrs
+	br	K31212
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+
+K31212:	MOV	<K13332+2>, R3		; get (RM+1)
+	MOVB	(R3), R0		; get room type
+K31220:	CMPB	R0, #356		;WARN
+	BNE	K31324
+	mov	#BuffB+135., R3
+	mov	#BuffD+135., R2
+	MOVB	#000012, R1		; 10.
+; FNLP1:
+K31242:	CALL	Random			; Get random number
+	BIC	#177774, R0
+	ADD	#000117, R0
+	MOVB	R0, (R3)+
+	INC	R3
+	MOVB	#001, R0
+	MOVB	R0, (R2)+
+	INC	R2
+	MOVB	R0, (R2)
+	CALL	Random			; Get random number
+	BIC	#177774, R0
+	ADD	#000122, R0
+	MOVB	R0, (R3)
+	ADD	#000036, R3
+	ADD	#000036, R2
+	SOB	R1, K31242		; repeat
+; NFNCE:
+K31324:	MOVB	L15646, R0		; get RMTIME
+	BEQ	K31344
+	DECB	R0
+	MOVB	R0, L15646		; set RMTIME
+	JMP	K31712			; => MISGO
+; NJSTN:
+K31344:	CMPB	K36214, #037		; RMDN == 31. $1F ?
+	BNE	K31360
+	JMP	K31712			; => MISGO
+; Room level != 31.
+K31360:	MOV	<K13332+2>, R3		; get (RM+1)
+	MOVB	(R3), R0		; get room type
+	CMPB	R0, #035		; 29. $1D
+	BEQ	K31430
+	CMPB	R0, #043		; 35. $23
+	BEQ	K31430
+	CMPB	R0, #042		; 34. $22
+	BEQ	K31430
+	CMPB	R0, #046		; 38. $26
+	BEQ	K31430
+	CMPB	R0, #052		; 42. $2A
+	BEQ	K31430
+	JMP	K31712			; => MISGO
+; BATSI:
+K31430:	CALL	K27766			; RND
+	BIC	#177700, R0		; 0..63.
+	INCB	R0
+	CMPB	R0, #005		; 5.
+	BHIS	K31626
+	MOV	#K33475, R3
+K31454:	ADD	#000007, R3
+	DECB	R0
+	BNE	K31454
+	MOVB	(R3), R0
+	BNE	K31626
+	MOVB	#000340, (R3)+
+	MOVB	#000011, (R3)+
+	CLRB	(R3)+
+	MOVB	#000040, (R3)+
+	MOVB	#001, (R3)+
+	CALL	K27766			; RND
+	BIC	#177770, R0
+	ASL	R0
+	MOV	#026700, R4									; (!!!)
+	ADD	R0, R4
+	MOVB	(R4), (R3)+
+	MOVB	000001(R4), (R3)
+	CALL	K27766			; RND
+	BIC	#177776, R0
+	BEQ	K31626
+	MOV	#000014, R0
+	MOVB	(R3), R5
+	XOR	R0, R5
+	MOVB	R5, (R3)
+	MOVB	-(R3), R5
+	XOR	R0, R5
+	MOVB	R5, (R3)
+	MOVB	-(R3), K01607
+	MOVB	-(R3), K01606
+	MOVB	#000037, -(R3)
+	INC	R3
+	ADD	#000037, K01606
+	MOVB	K01606, (R3)+
+	MOVB	K01607, (R3)
+; NBATI:
+K31626:	MOV	#000004, R1		; 4.
+	MOV	#K33504, R4
+	MOV	#000007, R2
+K31642:	MOVB	000001(R4), R0		; <
+	CMPB	R0, #000010
+	BEQ	K31662
+	CMPB	R0, #000012
+	BNE	K31706
+K31662:	MOVB	000005(R4), K01602	; room number
+	MOV	#000003, R0
+	XOR	R0, K01602
+	MOVB	K01602, 000005(R4)
+K31706:	ADD	R2, R4
+	SOB	R1, K31642		; repeat
+; MISGO:
+K31712:	MOV	#000006, R0
+	MOV	#K33466, R4		; MISL1 - Ninja object
+;
+K31722:	MOVB	R0, K32300		; set MSLNO
+	MOVB	(R4), R0
+	BNE	K31736
+	JMP	K32436
+;
+K31736:	MOVB	000003(R4), K01610
+	MOVB	000004(R4), K01611
+	MOV	K01610, R3
+	ADD	#BuffD, R3		; BUFFD
+	MOVB	#001, (R3)
+	MOVB	000005(R4), R5
+	PUSH	R1
+	MOV	#000002, R1
+; MIKY2
+K32000:	BIT	#000001, R5		; bit 0 ?
+	BEQ	K32012
+	CALL	K33274			; UPOBJ - Object moves up
+K32012:	BIT	#000002, R5		; bit 1 ?
+	BEQ	K32024
+	CALL	K33362			; DOWNO - Object moves down
+K32024:	BIT	#000004, R5		; bit 2 ?
+	BEQ	K32036
+	CALL	K33404			; LEFTO - Object moves left
+K32036:	BIT	#000010, R5		; bit 3 ?
+	BEQ	K32050
+	CALL	K33424			; RITEO - Object moves right
+K32050:	MOVB	000003(R4), K01610
+	MOVB	000004(R4), K01611
+	MOV	K01610, R3		; R3 = object offset
+	ADD	#BuffB, R3		; BUFFB Back tile screen address
+	CMPB	(R3), #000307
+	BLO	K32112
+; NOEL3:
+K32102:	CLRB	(R4)
+	POP	R1
+	JMP	K32436
+K32112:	ADD	#003300, R3		; + <BUFG1-BUFFB>
+	CMPB	K32300, #000006		; MSLNO == 6. ?
+	BNE	K32146
+	MOVB	(R3), R0
+	INCB	R0
+	BEQ	K32146
+	MOV	#000001, R0
+K32140:	MOVB	R0, K26672		; set GDHIT
+	BR	K32102
+; NOEL2:
+K32146:	ADD	#001100, R3		; + <BUFG2-BUFG1>
+	CMPB	K32300, #000006		; MSLNO == 6. ?
+	BNE	K32302
+	MOVB	(R3), R0
+	INCB	R0
+	BEQ	K32302
+	MOV	#000002, R0
+	BR	K32140
+;
+; PANTS procedure: ??
+K32176:	MOV	#000007, R0		; 7.
+	MOV	#050116, 055312		; <MANBF+6> address -> PUM06+1				; (!!!)
+	MOVB	R0, 055334									; (!!!)
+	INCB	R0
+	MOVB	R0, K30604
+	MOVB	R0, K36200
+	MOV	#000003, R0
+	MOVB	R0, <K30540+2>
+	INCB	R0
+	MOVB	R0, <K36142+2>
+	MOV	#000020, R0
+	MOVB	R0, 055452									; (!!!)
+	MOVB	R0, 055436									; (!!!)
+	MOV	#000030, R0
+	MOVB	R0, 055446									; (!!!)
+	MOVB	R0, 055432									; (!!!)
+	CLR	R0
+	RETURN
+;
+K32300:	.WORD	0			; MSLNO
+;
+K32302:	SUB	#002200, R3
+	CMPB	K32300, #000006		; MSLNO == 6. ?
+	BEQ	K32350
+	CMPB	(R3), #000340
+	BHIS	K32350
+	MOV	#000005, R1
+	CALL	Decen			; DECEN
+	CALL	L15650			; Sound CRUNCH noise
+	CMPB	(R4), #000340
+	BLO	K32102
+	BR	K32364
+K32350:	MOVB	000006(R4), R5
+	DECB	R1
+	BEQ	K32364
+	JMP	K32000
+K32364:	POP	R1
+	MOVB	000003(R4), K01610
+	MOVB	000004(R4), K01611
+	MOV	K01610, R3
+	ADD	#BuffN, R3		; BUFFN Ninja tile screen address
+	MOVB	(R4), (R3)
+	RORB	(R4)
+	BHIS	K32422
+	.WORD	005727	;TST #000261	; XOR 1
+K32422:	SEC
+	ROLB	(R4)
+	SUB	#003300, R3
+	MOVB	#001, (R3)
+; NDOMS:
+K32436:	ADD	#000007, R4
+	MOVB	K32300, R0		; get MSLNO
+	DECB	R0
+	BEQ	K32456
+	JMP	K31722
+K32456:	TSTB	K36214			; check RMDN room level
+	BNE	K32542			; not 0 (top) =>
+; We're on the top room level
+	MOVB	K36210, R2		; get MANA
+	ADD	#000060, R2
+	ADD	#000156, R2
+	MOV	R2, K40276		; set GLIPS
+	MOVB	#005, K40300		; set GLIDN = 5
+	MOV	#K40301, R2		; GLIDC
+	MOV	#BuffO, R1		; BUFFO Front tile screen address
+	CALL	K40356			; DRGLI
+	MOV	#K46162, R2		; NINDC
+	MOV	#BuffD, R1		; BUFFD
+	CALL	K40356			; DRGLI
+
+; TV processing
+; PICRT:
+K32542:	TSTB	K14640			; do we have TV in the room?
+	BEQ	SetTermColor
+	MOV	#K14641, R4		; TVCNT
+	DECB	(R4)
+	BNE	K32612
+	CALL	K27766			; RND2
+	MOVB	R0, (R4)
+	BIC	#177774, R0
+	BNE	K32624
+	CALL	K27766			; RND2
+	BIC	#177774, R0
+	ADD	#000004, R0
+	BR	K32650
+K32612:	MOVB	000001(R4), R0
+	BIT	#000004, R0		; bit 2 ?
+	BNE	K32650
+K32624:	CALL	K27766			; RND2
+	BIC	#177774, R0
+	CMPB	R0, 000001(R4)
+	BNE	K32650
+	INCB	R0
+	BIC	#177774, R0		; 0..3
+K32650:	MOVB	R0, 000001(R4)
+	ASL	R0
+	ASL	R0			; *4
+	MOV	R0, R1
+	ASL	R0			; *8.
+	ADD	R1, R0			; *12.
+	MOV	R0, R2
+	ADD	#K14500, R2		; + TVFZ1
+	; change TV screen tiles, set buffD to update them
+	mov	#BuffB+133., R3		; TV positions in buffers
+	mov	#BuffD+133., R4
+	mov	#3, R5			; TV height
+10$:	mov	#4, R1			; TV width
+20$:	movb	(R2)+, (R3)+
+	movb	#1, (R4)+
+	sob	R1, 20$
+	add	#34, R4
+	add	#34, R3
+	SOB	R5, 10$
+
+; coloring terminals
+SetTermColor:
+	MOV	K36212, R3			; get MANPS
+	add	#BuffO+98., R3
+	movb	#^B01000, R0			; blue background
+	cmpb	(R3), #212			; is we at terminal
+	bne	10$
+	mov	#^B11000, R0			; red background
+10$:	; set color attrs for terminal tiles
+	mov	R0, K46013
+	mov	R0, K46034
+	mov	R0, K46055
+
+;
+; OK, draw screen then
+;
+DoPic1:	CALL	DrawScreen		; DOPIC - Show the room on the screen
+	TSTB	K36216			; check ELECU
+	BEQ	K33052
+
+
+; NICK2: Set Ninja to random color, but not blue or green
+K33012:	CALL	Random			; Get random number
+	BIC	#177770, R0		; 0..7
+	CMPB	R0, #001		; == 1 blue ?
+	BEQ	K33012			; yes => again
+	CMPB	R0, #004		; == 4 green ?
+	BEQ	K33012			; yes => again
+	nop
+	nop
+	MOV	#000024, R1		; 20.
+	CALL	Decen			; DECEN
+; NICK:
+K33052:	TSTB	K33540			; check DEAD
+K33056:	BEQ	K33114			; alive =>
+; Dead
+	TSTB	K33542			; check JUMP
+	BNE	K33114
+	MOV	#047606, R2
+	MOVB	#001, K33542		; set JUMP = 1
+	MOV	#K54302, R3		; LEP5P address
+	MOV	R2, <K36276+2>
+	MOV	R3, <K25272+2>		; set JMP address
+K33114:	CMPB	K33540, #002		; DEAD == 2 ?
+	BEQ	K33270
+
+; Update TIMER counter
+K33124:	; а не пошел бы этот таймер знаете-ли
+	jmp	K24764
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+K33270:	jmp	K24764
+
+;
+; UPOBJ procedure - Object moves up
+K33274:	TSTB	000001(R4)		; Y == 0 ?
+	BEQ	K33350			; => OBGON
+	DECB	000001(R4)		; Y--
+	MOV	#177740, R2		; -32.
+; => MOVOJ
+K33312:	MOVB	000003(R4), K01610
+	MOVB	000004(R4), K01611
+	ADD	R2, K01610
+	MOVB	K01610, 000003(R4)
+	MOVB	K01611, 000004(R4)
+	RETURN
+; OBGON:
+K33350:	CLRB	(R4)
+	TST	(SP)+
+	TST	(SP)+
+	JMP	K32436			; => NDOMS
+; DOWNO procedure - Object moves down
+K33362:	CMPB	#000021, 000001(R4)	; Y == 17. ?
+	BEQ	K33350			; => OBGON
+	INCB	000001(R4)		; Y++
+	MOV	#000040, R2		; 32.
+	BR	K33312			; => MOVOJ
+; LEFTO procedure - Object moves left
+K33404:	TSTB	000002(R4)		; X == 0 ?
+	BEQ	K33350			; => OBGON
+	DECB	000002(R4)		; X--
+	MOV	#177777, R2		; -1
+	BR	K33312			; => MOVOJ
+; RITEO procedure - Object moves right
+K33424:	CMPB	#000037, 000002(R4)	; X == 31. ?
+	BEQ	K33350			; => OBGON
+	INCB	000002(R4)		; X++
+	MOV	#000001, R2		; 1
+	BR	K33312			; => MOVOJ
+;
+K33446:	.ASCII	/TIME IS SHORT /
+
+K33464:	.BYTE	1			; HELD value
+K33465:	.BYTE	0			; NEAR value
+; Objects table, 7 bytes each
+;   +001: X
+;   +002: Y
+;   +003 +004: Object offset in the room buffers
+; MISL1 - Ninja object
+K33466:	.BYTE	0
+K33467:	.BYTE	0
+K33470:	.BYTE	0
+K33471:	.BYTE	0
+K33472:	.BYTE	0
+K33473:	.BYTE	0
+K33474:	.BYTE	0
+; MISL2 - Guard object
+K33475:	.BYTE	0
+K33476:	.BYTE	010
+K33477:	.BYTE	031
+K33500:	.BYTE	031
+K33501:	.BYTE	001
+K33502:	.BYTE	0
+K33503:	.BYTE	0
+; MISL3 - 4 objects - bats
+K33504:	.BYTE	000, 010, 027, 027, 001, 000, 000
+	.BYTE	000, 010, 027, 027, 001, 000, 000
+	.BYTE	000, 010, 027, 027, 001, 000, 000
+	.BYTE	000, 010, 027, 027, 001, 000, 000
+;
+K33540:	.BYTE	0		; DEAD: 0=alive, 1=enery out, 2=time out
+	.EVEN
+
+
+K33542:	.BYTE	0		; JUMP
+
+; ???
+@include S23763.MAC
+
+K36037:	.byte	0		; guard 1 DIR
+K36040:	.byte	0		; guard 2 DIR
+K36041:	.byte	0		; ???
+
+; (???) NOT NEEDED 
+; G1DIS procedure
+;K36042:	movb	K36037, R0
+;	MOVB	K36264, K36037		; copy DIR
+;	BR	K36104
+; (???) NOT NEEDED
+; G2DIS procedure
+;K36056:	MOVB	K36040, R0
+;	MOVB	K36264, K36040		; copy DIR
+;	BR	K36104
+	.blkw	12.
+;
+; G1DI2 procedure: ??
+K36072:	MOVB	000012(R4), R0
+	MOVB	K36264, 000012(R4)	; copy DIR
+K36104:	MOVB	R0, K36264		; set DIR
+	RETURN
+;
+; GRDAR procedure: ??
+K36112:	MOVB	000004(R4), K01611
+	MOVB	000003(R4), K01610
+	MOV	K01610, R3
+	ADD	#BuffD, R3		; BUFFD address
+	MOV	#K46162, R2		; NINDC address
+K36142:	MOV	#000010, R1		;WARN 8.
+	movb	K36200, K01604									; MOVB	036200, K01604									
+	MOVB	000011(R4), K01607
+	BICB	#177600, K01607
+	MOVB	000001(R4), R0
+	JMP	K47660			; DRWOB
+;
+K36200:	.WORD	000006
+K36202:	.WORD	000000
+;
+K36204:	.ASCII	/888/			; TIME1 - timer current value, 3-char
+K36207:	.BYTE	10.			; TIME2 - timer counter
+K36210:	.BYTE	10.			; MANA ??
+K36211:	.BYTE	10.			; MAND ??
+K36212:	.BYTE	112			; MANPS ??
+K36213:	.BYTE	001
+RoomY:
+K36214:	.BYTE	0			; RMDN - room level, 0=top, 31.=water
+RoomX:
+K36215:	.BYTE	0			; RMAC - room position 0=left, 31.=right
+K36216:	.BYTE	0			; ELECU ??
+	.EVEN
+;
+; MANAR procedure: ??
+K36220:	MOV	K36212, R3		; get MANPS
+	ADD	#BuffD, R3		; + BUFFD
+	MOV	#K46162, R2		; get NINDC
+	MOV	#000010, R1		; 8.
+K36240:	MOVB	#006, K01604		; 6.
+	MOVB	K36211, K01607		; get MAND
+	MOVB	K36210, R0		; get MANA
+	JMP	K47660			; => DRWOB
+;
+K36264:	.WORD	0			; DIR - mirroring flag
+;
+; MANDR procedure: ??
+K36266:	MOV	K36212, R3		; get MANPS
+	ADD	#BuffN, R3		; + BUFFN: Ninja tile screen address
+K36276:	MOV	#000000, R2		;!!MUT-ARG!!
+	MOV	#000007, R1		; 7.
+	BR	K36240
+;
+; MOVAC procedure: ??
+K36310:	MOVB	K36264, R2		; get DIR
+	ASL	R2
+	BIC	#177400, R2
+	DEC	R2
+	MOVB	K36210, R0		; get MANA
+	ADD	R2, R0
+	MOVB	R0, K36210		; set MANA
+	ADD	R2, K36212		; MANPS
+	RETURN
+; EDGES procedure
+K36344:	MOVB	K36210, R0		; get MANA
+	TSTB	K36264			; check DIR
+	BEQ	K36374			; left =>
+; DIR != 0: right
+	CMPB	R0, #035		; MANA == 29. ?
+	BEQ	K36366	;TODO
+	RETURN
+K36366:	POP	R3
+	JMP	K37746			; => RITSC - go one room right
+; DIR = 0: left
+K36374:	CMPB	R0, #375		; == 253. ?
+	BEQ	K36404	;TODO
+	RETURN
+K36404:	POP	R3
+	JMP	K40012			; => LEFSC - go one room left
+; JMP1P: ??? - Vector for (VECTN+1)
+K36412:	CALL	K40726			; OFTOP
+	CALL	K36344			; EDGES
+	CALL	K37270			; HITJJ
+	CALL	K36310			; MOVAC
+	MOV	#000004, R1
+	MOV	#050111, R3		; MANBF+1
+K36442:	MOVB	(R3)+, R0
+	INCB	R0
+	CMPB	R0, #000310
+	BHIS	K36504			; => HRISL
+	SOB	R1, K36442		; repeat
+	DECB	K36211
+	SUB	#000040, K36212		; MANPS
+	MOV	#037662, R3										; (!!!)
+	DECB	(R3)
+	BEQ	K36504			; => HRISL
+	JMP	K25276			; => ENDVC
+; HRISL:
+K36504:	MOVB	#004, R0		; 4.
+; ARSED:
+K36510:	MOVB	R0, K37662		; set SPEED
+	MOV	#K36546, R3		; SOMER -> (VECTN+1)
+	MOV	#046352, R2		; SOM1C -> (CHARN+1)						; (!!!)
+	CLRB	K36534			; clear SOMPS
+	JMP	K55246			; => SETVC - set vectors
+;
+K36534:	.BYTE	0			; SOMPS
+	.EVEN
+; SOMAN:	SOM1C, SOM2C, SOM3C, SOM4C
+K36536:	.WORD	046352, 046413, 046455, 046517								; (!!!)
+
+; SOMER: ??? - Vector for (VECTN+1)
+K36546:	MOVB	K36534, R3		; get SOMPS
+	INCB	R3
+	BIC	#177774, R3		; 0..3
+	MOVB	R3, K36534		; set SOMPS
+	ASL	R3			; *2
+	MOV	K36536(R3), <K36276+2>
+	BR	K36646			; => JMP2P
+;
+; FKIKS: ??? - Vector for (VECTN+1)
+K36576:	MOV	#K36612, R3		; FKIKP -> (VECTN+1)
+	MOV	#047462, R2		; FKIKC -> (CHARN+1)
+	JMP	K55246			; => SETVC - set vectors
+; FKIKP: ??? - Vector for (VECTN+1)
+K36612:	MOVB	050116, R0									; (!!!)
+	INCB	R0
+	BEQ	K36646
+	mov	#BuffG1+32., R2
+	MOVB	K36264, R0		; get DIR
+	DECB	R0
+	BNE	10$
+	mov	#BuffG1+37., R2
+10$:	CALL	K51646			; HITGQ
+; JMP2P:
+K36646:	CALL	K36344			; EDGES
+	CALL	K37270			; HITJJ
+	CALL	K36310			; MOVAC
+	DECB	K37662			; decrement SPEED
+	BEQ	K36674
+	JMP	K25276			; => ENDVC
+K36674:	MOVB	#006, K37662		; set SPEED = 6
+	MOV	#K36712, R3		; JMP3P
+	JMP	K55252			; SETV2 - set vector
+; JMP3P:
+K36712:	CALL	K54212			; OFBOT
+	CALL	K36344			; EDGES
+	CALL	K37270			; HITJJ
+	MOVB	050162, R0		; get from (MANBF+42)					; (!!!)
+	INCB	R0
+	CMPB	R0, #000310
+	BLO	K36746
+	JMP	K55262
+K36746:	CALL	K50274			; FLORQ
+	BEQ	K36760
+	JMP	K50744
+K36760:	CALL	K36310			; MOVAC
+	INCB	K36211			; increment MAND
+	ADD	#000040, K36212		; + 32. MANPS
+	MOV	#047336, <K36276+2>
+	DECB	K37662			; decrement SPEED
+	BEQ	K37016
+	JMP	K25276
+K37016:	MOVB	#000031, R0		; 25.
+K37022:	MOVB	R0, K37662		; set SPEED = 25.
+	MOVB	#001, R0
+	MOVB	R0, <K54510+2>		; set (HIGHT+1)
+	MOVB	R0, K33542		; set JUMP
+	MOV	#047606, R2		; TTFAL -> (CHARN+1)
+	MOV	#K37060, R3		; JMP4P -> (VECTN+1)
+	JMP	K55246			; => SETVC - set vectors
+;
+K37056:	.WORD	0			; TTFAL
+; JMP4P: - Vector for (VECTN+1)
+K37060:	CALL	K54212			; OFBOT
+	CALL	K36344			; EDGES
+	CALL	K50274			; FLORQ
+	BEQ	K37102
+	JMP	K54510			; => HIGHT
+K37102:	MOV	#<K54510+2>, R3		; HIGHT+1 addr
+	INCB	(R3)
+	RORB	K37056			; TTFAL
+	BHIS	K37120
+	.WORD	005727	;TST #000261	; XOR 1
+K37120:	SEC
+	ROLB	K37056			; TTFAL
+	BNE	K37134
+	JMP	K37164			; => NACRF
+K37134:	CALL	K37270			; HITJJ
+	MOVB	050162, R0									; (!!!)
+	INCB	R0
+	CMPB	R0, #000310
+	BLO	K37160
+	JMP	K55262
+K37160:	CALL	K36310			; MOVAC
+K37164:	INCB	K36211
+	ADD	#000040, K36212		; MANPS += 32.
+	MOV	#K37662, R3
+	DECB	(R3)
+	BEQ	K37212
+	JMP	K25276			; => ENDVC
+K37212:	MOV	#047606, R2		; FALLC							; (!!!)
+	JMP	K52152			; => STL52
+; HITJP procedure
+K37222:	MOV	#000006, R1		; 6.
+; HITJR:
+K37226:	MOV	#050116, R3		; MANBF+6
+	MOV	#000006, R2
+	MOV	#000001, R5
+K37242:	MOVB	(R3), R0		; <
+	INCB	R0
+	CMPB	R0, #000310
+	BHIS	K37262
+	ADD	R2, R3
+	SOB	R1, K37242		; repeat
+	CLRB	R5
+K37262:	DECB	R5
+	INCB	R5
+	RETURN
+; HITJJ procedure
+K37270:	CALL	K37222			; HITJP
+	BNE	K37300	;TODO
+	RETURN
+K37300:	POP	R3
+	BR	K37212
+; SLOPQ procedure
+K37304:	POP	R1
+	CMPB	050163, #000007									; (!!!)
+	BEQ	K37520			; => NRNDN
+	CMPB	050166, #000007									; (!!!)
+	BEQ	K37520			; => NRNDN
+	PUSH	R1
+	MOVB	#005, R1
+	CALL	K37226			; HITJR
+	POP	R1
+	TSTB	R5
+	BEQ	K37352
+	JMP	K55262			; => SETST
+K37352:	MOVB	050154, R0									; (!!!)
+	INCB	R0
+	CMPB	R0, #310		; 200.
+	BHIS	K37372	;TODO
+	JMP	K37412			; => NRNUP
+K37372:	DECB	K36211
+	SUB	#000040, K36212		; MANPS
+	CALL	K40726			; OFTOP
+	BR	K37520			; => NRNDN
+; NRNUP:
+K37412:	CMPB	050165, #307		; 199.									; (!!!)
+	BLO	K37426	;TODO
+	JMP	K37520			; => NRNDN
+K37426:	CMPB	050162, #307		; 199.									; (!!!)
+	BLO	K37442	;TODO
+	JMP	K37520			; => NRNDN
+K37442:	INCB	K36211
+	ADD	#000040, K36212		; MANPS += 32.
+	CALL	K54212			; OFBOT
+	PUSH	R1
+	CALL	L10200			; GTBAK
+	CALL	K36220			; MANAR
+	CALL	L10236			; GTBK2
+	CALL	K50274			; FLORQ
+	POP	R1
+	MOVB	#005, R0
+	TSTB	R5
+	BNE	K37520			; => NRNDN
+	JMP	K37022			; => SETTT
+; NRNDN:
+K37520:	PUSH	R1
+	RETURN
+; RITEP:
+K37524:	CALL	K36344			; EDGES
+	CALL	K37304			; SLOPQ
+	CALL	K36310			; MOVAC
+	CALL	K41000			; LEGS
+	call	GetKey
+	BIT	#000010, R0		; bit 3 ?
+	BEQ	K37636
+; SETJP: Set Jump
+K37556:	MOVB	#001, R0
+	MOVB	R0, K33542		; set JUMP = 1
+	MOVB	R0, <K54510+2>		; set (HIGHT+1)
+	MOVB	#004, K37662		; set SPEED = 4
+	MOV	#K36412, R3		; JMP1P -> (VECTN+1)
+	MOV	#047336, R2		; JUMPC -> (CHARN+1)									; (!!!)
+	JMP	K55246			; => SETVC - set vectors
+; SETFK: Set Fire
+K37614:	MOVB	#005, K37662		; set SPEED = 5
+	MOV	#K36576, R3		; FKIKS -> (VECTN+1)
+	MOV	#047336, R2		; JUMPC -> (CHARN+1)
+	JMP	K55246			; => SETVC - set vectors
+; NJUMP:
+K37636:	BIT	#000020, R0		; bit 4 fire ?
+	BNE	K37614			; => SETFK
+	BIT	#000001, R0		; bit 0 ?
+	BNE	K37656
+	JMP	K55262			; => SETST
+K37656:	JMP	K25276			; => ENDVC
+;
+K37662:	.WORD	0			; SPEED
+;
+; TPORT: Teleport to room (30.,24.)
+K37664:	NOP2	;CALL	K01612			; fill screen attrs??
+	MOVB	#000036, K36215		; set RMAC = 30. room position
+	MOVB	#000030, K36214		; set RMDN = 24. room level
+	MOVB	#005, K36211		; set MAND = 5
+	MOVB	#004, K36210		; set MANA = 4
+	MOV	#000244, K36212		; set MANPS = 164.
+	MOV	#072230, <K13332+2>	; set (RM+1)
+	nop
+	nop
+	nop
+K37742:	JMP	K13072			; => INISC
+; RITSC: go one room right
+K37746:	MOV	<K13332+2>, R3		; get RM+1
+	CMPB	(R3), #101		; room type == $41 ?
+	BEQ	K37664			; yes => TPORT teleport
+	INCB	K36215			; incr RMAC - one room right
+	MOVB	#000375, K36210		; set MANA = 253.
+	MOV	K36212, R3		; get MANPS
+	SUB	#000040, R3
+	MOV	#000001, R2		; one room right
+	JMP	K54262			; => PIGGS
+; LEFSC: go one room left
+K40012:	DECB	K36215			; decr RMAC - one room left
+	MOVB	#000035, K36210		; set MANA = 29.
+	MOV	K36212, R3		; get MANPS
+	ADD	#000040, R3		; +32.
+	MOV	#177777, R2		; one room left
+	JMP	K54262			; => PIGGS
+; LEFTP: - Vector for (VECTN+1)
+K40044:	CALL	K36344			; EDGES
+	CALL	K37304			; SLOPQ
+	CALL	K36310			; MOVAC
+	CALL	K41000			; LEGS
+	MOV	#K17200, R3		; BIKER addr
+	MOVB	(R3), R0
+	INCB	R0
+	BEQ	K40230			; => NESCP
+	INCB	R0
+	BEQ	K40230			; => NESCP
+	DECB	(R3)
+	BEQ	K40112
+	JMP	K25276			; => ENDVC
+K40112:	MOV	#000021, R1		; 17.
+	MOV	#K40164, R2		; " EXCELLENT VALUE "
+	mov	#BuffO+263., R3
+	CALL	PrintOnBgr			; BUFOM - Draw string as tiles
+	MOV	#000022, R1		; 18.
+	MOV	#K40205, R2		; " YOU HAVE ESCAPED "
+	mov	#BuffO+359., R3
+	CALL	PrintOnBgr			; BUFOM - Draw string as tiles
+	MOVB	#310, K17200		; set BIKER
+	JMP	K55262			; => SETST - end of game
+;
+K40164:	.ASCII	/@EXCELLENT@VALUE@/
+K40205:	.ASCIZ	/@YOU@HAVE@ESCAPED@/
+; NESCP:
+K40230:	call	GetKey
+	BIT	#000010, R0		; bit 3 ?
+	BEQ	K40246
+	JMP	K37556			; SETJP - set jump
+K40246:	BIT	#000020, R0		; bit 4 fire ?
+	BEQ	K40260
+	JMP	K37614
+K40260:	BIT	#000002, R0		; bit 1 left ?
+	BNE	K40272
+	JMP	K55262			; => SETST
+K40272:	JMP	K25276			; => ENDVC
+;
+K40276:	.WORD	0			; GLIPS
+K40300:	.BYTE	0			; GLIDN
+; GLIDC: Glider 4x11 tiles
+K40301:	.BYTE	377,377,377,377,105,106,107,110,111,112,377
+	.BYTE	113,114,115,116,117,120,121,122,123,377,377
+	.BYTE	124,125,126,127,130,131,132,133,134,135,377
+	.BYTE	377,377,377,136,137,377,140,141,377,377,377
+	.BYTE	000
+;
+; DRGLI procedure: Draw glider 4x11 tiles; R1 = addr in tile screen, R2 = GLIDC or NINDC
+K40356:	MOV	#K40276, 047720		; GLIPS addr -> (HELP1+1)
+	MOV	K40276, R3		; get GLIPS
+	ADD	R1, R3
+	MOV	#000004, R1		; height = 4
+	MOVB	#013, K01604		; width = 11.
+	MOVB	K40300, K01607
+	MOVB	K36210, R0		; get MANA
+	SUB	#000002, R0
+	CALL	K47660			; DRWOB
+K40426:	MOV	#K36212, 047720		; MANPS addr -> (HELP1+1)
+	RETURN
+; DRBIK procedure
+K40436:	MOV	#K17202, 047720		; BIKPS addr -> (HELP1+1)
+	MOV	K36212, R3		; get MANPS
+	ADD	#000076, R3
+	MOV	R3, K17202		; set BIKPS
+	ADD	R1, R3
+	MOVB	#005, R1
+	MOVB	#000013, K01604
+	MOVB	#000012, K01607
+	MOVB	K36210, R0		; get MANA
+	SUB	#000002, R0
+	CALL	K47660			; DRWOB
+	BR	K40426
+;
+K40520:	CMPB	K36210, #375		; MANA == 253. ?
+	BNE	K40534
+	JMP	K40012
+K40534:	CALL	K36310			; MOVAC
+	call	GetKey
+	BIT	#000020, R0		; bit 4 fire ?
+	BNE	K40564
+	DECB	037662
+	BEQ	K40564
+	JMP	K25276
+K40564:	MOVB	#001, R0
+	JMP	K36510
+;
+K40574:	.WORD	0
+; BIKEP: ??? - Vector for (VECTN+1)
+K40576:	CMPB	K36210, #375		; MANA == 253. ?
+	BNE	K40612
+	JMP	K40012
+K40612:	CALL	K36310			; MOVAC
+	RORB	K40574
+	BHIS	K40626
+	.WORD	005727	;TST #000261	; XOR 1
+K40626:	SEC
+	ROLB	K40574
+	BNE	K40576
+	MOV	#K17273, R2		; ??? 11x5 tiles
+	MOV	#BuffO, R1		; BUFFO Front tile screen address
+	CALL	K40436			; DRBIK
+	MOV	#046162, R2
+	MOV	#BuffD, R1		; BUFFD
+	CALL	K40436			; DRBIK
+	DECB	037662
+	BEQ	K40700
+	JMP	K25276
+K40700:	MOV	#K17204, R2		; BIKEC 11x5 tiles
+	MOV	#BuffO, R1		; BUFFO Front tile screen address
+	CALL	K40436			; DRBIK
+	MOVB	#020, K17200		; set BIKER = 16.
+	JMP	K55262			; => SETST game nearly completed
+; OFTOP procedure
+K40726:	MOVB	K36211, R0		; get MAND
+	CMPB	R0, #000371		; == 249. ?
+	BEQ	K40742
+	RETURN
+K40742:	DECB	K36214			; decr RMDN room level
+	POP	R3
+	ADD	#000022, R0		; + 18.
+	MOVB	R0, K36211		; set MAND
+	MOV	K36212, R3		; get MANPS
+	ADD	#001100, R3		; + 576.
+	MOV	#177740, R2		; up one level
+	JMP	K54262			; => PIGGS
+
+
+
+	; (!!!) WARNING
+	.if NE 41000-.
+	.error Addresses (41000) not in place
+	.endc
+
+
+; LEGS procedure
+K41000:	MOVB	046775, K01602		; room number
+	MOV	#000233, R0
+	XOR	R0, K01602
+	MOVB	K01602, 046775		; room number
+
+; Legs copy tiles from 4 legs positions
+; advance legs
+	ADD	#000022, K41150+2	; + 18.
+	MOVB	K41172, R0		; get LEGP
+	INCB	R0
+	CMPB	R0, #004		; == 4 ?
+	BNE	K41144
+	MOV	#K47030, K41150+2
+	; step sound
+	call	SoundStep
+	;
+	clr	R0
+K41144:	movb	R0, K41172		; set LEGP
+K41150:	mov	#000000, R3		;!!MUT-ARG!! (!!!) must be even addr
+	mov	#K47006, R2		; fortunately leg addrs ARE even
+	mov	#4, R1			; 18. leg tiles (9. words)
+10$:	mov	(R3)+, (R2)+		; <
+	mov	(R3)+, (R2)+		; <
+	sob	R1, 10$			; repeat
+	mov	(R3)+, (R2)+
+	return
+
+K41172:	.byte	0			; LEGS
+	.byte	0			; was FFCOL (K41173)
+	.byte	0			; was FFCOL+1
+K41175:	.BYTE	0			; TMPNC
+
+
+; Foreground tiles
+@include S2TILF.MAC
+
+	; WARNING!!!
+	.if LT 46162-.
+	.error Addresses (46162) not in place
+	.endc 
+
+	.=46162
+
+;K46162:
+@include S24C72.MAC
+;
+
+; DRWOB procedure
+K47660:	MOVB	R0, #000000
+K47666 =: .+2
+	MOVB	R0, #000000
+;
+K47670:	MOVB	K36264, R0		; get DIR
+	DECB	R0
+	BNE	K47704
+	JMP	K55302			; => DROBR
+K47704:	PUSH	R4
+	PUSH	R5
+	MOV	R1, R5
+	MOV	#K50110, R1		; MANBF addr
+	MOV	@#K36212, R4		; get MANPS
+	ADD	#BuffB, R4		; BUFFB Back tile screen address
+	MOVB	K01604, K50062
+; LOOP6:
+K47734:	MOVB	K50062, K01604
+	PUSH	R4
+	MOVB	047662, K01606
+	PUSH	R3
+K47754:	CMPB	K01606, #040		; compare to 32.
+	BHIS	K50010			; => NBUNG
+	CMPB	K01607, #022		; compare to 18.
+	BHIS	K50010			; => NBUNG
+	MOVB	(R4), R0		; get tile
+K47776:	NOP		;!!MUT-CMD!!  NOP or MOVB R0,(R1)  see L10224
+	CMPB	R0, #307
+	BHIS	K50010
+	MOVB	(R2), (R3)
+; NBUNG:
+K50010:	INCB	K01606
+	INC	R4
+	INC	R1
+	INC	R3
+	INC	R2
+	DECB	K01604
+	BNE	K47754			; => LOOP7
+	POP	R3
+	ADD	#000040, R3		; + 32.
+	INCB	K01607
+	POP	R4
+	ADD	#000040, R4		; + 32.
+	SOB	R5, K47734		; repeat => LOOP6
+	POP	R5
+	POP	R4
+	RETURN
+;
+K50062:	.BYTE	6
+	.EVEN
+;
+	.BLKW	12	;TODO
+
+K50110:	.BLKW	30			; MANBF
+K50156 =: K50110 + 46
+
+;
+; CRUTP: ??? - Vector for (VECTN+1)
+K50170:	CALL	K50274			; FLORQ
+	BNE	K50336
+	MOV	K36212, R3		; get MANPS
+	mov	#BuffO+34., R2
+	CALL	K55630			; LFEDQ
+	ADD	R2, R3
+	MOV	#000002, R1
+	TSTB	(R3)
+	BNE	K50230
+	CALL	Decen			; DECEN
+K50230:	INCB	K36211
+	MOV	K36212, R3		; get MANPS
+	ADD	#000040, R3
+	MOV	R3, K36212		; set MANPS
+	mov	#BuffO+34., R2
+	CALL	K55630			; LFEDQ
+	ADD	R2, R3
+	TSTB	(R3)
+	BEQ	K50272	;TODO
+	JMP	K55262			; => SETST
+K50272:	BR	K50442			; => SINK
+; FLORQ procedure
+K50274:	MOV	#050163, R3
+	MOV	#000001, R5
+	MOV	#000004, R1
+K50310:	MOVB	(R3), R0
+	INCB	R0
+	CMPB	R0, #000310
+	BHIS	K50332
+	INC	R3
+	SOB	R1, K50310		; repeat
+	DECB	R5
+	RETURN
+K50332:	INCB	R5
+	RETURN
+;
+K50336:
+	mov	#BuffO+34., R2
+	CMPB	K36211, #000377
+	BPL	K50356
+	mov	#BuffO+194., R2
+K50356:	CALL	K55630			; LFEDQ
+	MOV	K36212, R3		; get MANPS
+	ADD	R2, R3
+	TSTB	(R3)
+	BEQ	K50442			; => SINK
+	call	GetKey
+	BIT	#000020, R0		; bit 4 fire ?
+	BEQ	K50430
+	MOVB	#001, K37662		; set SPEED = 1
+	MOV	#K50624, R3		; CRKIP -> (VECTN+1)
+	MOV	#047140, R2		; CRKIC -> (CHARN+1)
+	JMP	K55246			; => SETVC - set vectors
+; NKIKK:
+K50430:	BIT	#000004, R0		; bit 2 down ?
+	BNE	K50446
+	JMP	K55262			; => SETST
+; SINK:
+K50442:	call	GetKey
+K50446:	BIT	#000002, R0		; bit 1 left ?
+	BEQ	K50536
+	MOVB	K36264, R0		; get DIR
+	DECB	R0
+	BEQ	K50514			; 0 => CRRT
+	CALL	K50572			; SWIMQ
+	MOV	#000002, R1
+;	CALL	Decen			; DECEN
+	nop
+	nop
+	MOV	#047264, R2		; SWIMC -> (CHARN+1)
+	MOV	#K55644, R3		; SWILP -> (VECTN+1)
+	JMP	K55246			; => SETVC - set vectors
+; CRRT:
+K50514:	MOVB	R0, K36264		; set DIR = 0
+	JMP	K25276			; => ENDVC
+; CLRT:
+K50524:	INCB	R0			; 1.
+	MOVB	R0, K36264		; set DIR = 1
+	JMP	K25276			; => ENDVC
+; NSWL:
+K50536:	BIT	#000001, R0		; bit 0 ?
+	BEQ	K50620			; => NSWR
+	MOVB	K36264, R0		; get DIR
+	BEQ	K50524			; 0 => CLRT
+	CALL	K50572			; SWIMQ
+	MOV	#047264, R2		; SWIMC -> (CHARN+1)
+	MOV	#K55466, R3		; SWIRP -> (VECTN+1)
+	JMP	K55246			; => SETVC - set vectors
+; SWIMQ:
+K50572:	MOV	K36212, R3		; get MANPS
+	mov	#BuffO+130., R2
+	CALL	K55630			; LFEDQ
+	ADD	R2, R3
+	TSTB	(R3)
+	BNE	K50616
+	RETURN
+K50616:	TST	(SP)+
+; NSWR:
+K50620:	JMP	K25276			; => ENDVC
+; CRKIP:
+K50624:	TSTB	K37662			; check SPEED
+	BEQ	K50722
+	MOVB	050154, R0		; get (MANBF+36)
+	INCB	R0
+	BEQ	20$
+	mov	#BuffG1+192., R2
+	MOVB	K36264, R0		; get DIR
+	DECB	R0
+	BNE	10$
+	mov	#BuffG1+197., R2
+10$:	CALL	K51646			; HITGQ
+20$:	MOVB	050140, R0
+	INCB	R0
+	BEQ	K50722
+	mov	#BuffG1+128., R2
+	MOVB	K36264, R0		; get DIR
+	DECB	R0
+	BNE	30$
+	mov	#BuffG1+133., R2
+30$:	CALL	K51646			; HITGQ
+K50722:	CLRB	037662
+	call	GetKey
+	BIT	#000020, R0		; bit 4 fire ?
+	BEQ	K50744
+	JMP	K25276
+K50744:	CLRB	K33542			; clear JUMP
+	MOV	#K50170, R3		; CRUTP -> (VECTN+1)
+	MOV	#047212, R2		; CRUTC -> (CHARN+1)
+	JMP	K55246			; => SETVC - set vectors
+;
+K50764:	.ASCII	/STASH SEARCHED/
+;
+K51002:	DECB	037662
+	BEQ	K51014
+	JMP	K25276
+K51014:	MOV	K23746, R3		; get NERST
+	MOVB	(R3), K23750		; -> TEMPN
+	MOV	#000005, R1
+K51030:	MOVB	000001(R3), R0
+	MOVB	R0, (R3)+
+	CMPB	R0, #000003
+	BEQ	K51046
+	SOB	R1, K51030		; repeat
+K51046:	DEC	R3
+	CMPB	K23750, #004		; TEMPN == 4 ?
+	BNE	K51150
+	MOV	K51142, R2
+	INC	R2
+	MOV	R2, K51142
+	MOV	#K51145, R3		; TAPCT address
+	INCB	(R3)
+	CALL	Random			; Get random number
+	BIC	#177776, R0
+	ADD	#000045, R0
+	MOVB	R0, -(R3)
+	MOV	#000001, R1		; 1.
+	CALL	PrintStr		; PRINT string
+	MOV	#000144, R1		; 100.
+	CALL	L10244			; MONUP
+	JMP	K55262
+;
+K51142:	.WORD	0
+	.BYTE	0
+K51145:	.BYTE	0			; TAPCT - tapes held
+K51146:	.WORD	0			; TAPTT - tapes already placed
+;
+K11770:	.WORD	000			; CONQU
+;
+K51150:	CLR	R1
+	TSTB	K24762
+	BNE	K51164
+	MOV	#000200, R1
+K51164:	MOVB	K33464, R0		; get HELD value
+	BNE	K51200
+	MOV	#000003, R0
+	CLR	R1
+K51200:	BISB	R1, R0
+	MOVB	R0, (R3)
+	TSTB	R1
+	BEQ	K51216
+	MOVB	#001, K24762
+K51216:	MOVB	K23750, R0		; get TEMPN
+	BPL	K51300
+	BIC	#177600, R0		; 0..177
+	PUSH	R0
+	NOP2	;MOV	#055333, R2		; screen coords
+	NOP2	;MOVB	#004, R1		; 4. cols
+	NOP2	;MOV	#000217, R0
+K51246:	NOP1	;CALL	L13224			; <  calc screen attr address and set attrs for 8x8 block
+		;INC	R2
+		;SOB	R1, K51246		; repeat
+	call	XorNear
+	MOV	#K50764, R3			; "STASH SEARCHED"
+	MOV	#000016, R1			; 14.
+	MOV	#050146, R2			; screen coords
+	CALL	PrintStr			; PRINT string "STASH SEARCHED"
+	POP	R0
+K51300:	CMPB	R0, #003
+	BNE	K51310
+	CLR	R0
+K51310:	MOVB	R0, K33464			; clear HELD value
+	CALL	DrawHeld			; HLDOD
+	JMP	K55262
+; FIREP:
+K51324:	MOVB	050124, R0
+	INCB	R0
+	BEQ	K51620
+	TSTB	K33464				; check HELD value
+	BEQ	K51566
+; HELD value != 0
+K51342:	MOVB	K36264, R0			; get DIR
+	MOV	#000005, R1
+	MOVB	#000010, K01604
+	MOV	#000105, R2
+	DECB	R0
+	BEQ	K51406
+	MOV	#000000, R1
+	MOVB	#004, K01604
+	MOV	#000100, R2
+K51406:	MOVB	K36210, R0			; get MANA
+	ADD	R1, R0
+	MOV	K36212, R3			; get MANPS
+	ADD	R2, R3
+	MOV	R3, K01610
+	MOVB	K01610, K33471
+	MOVB	K01611, K33472
+	MOVB	R0, K33470
+	MOVB	K36211, R0
+	ADD	#000002, R0
+	MOVB	R0, K33467
+	MOVB	K33464, R0		; get HELD value
+	ASL	R0
+	ADD	#000320, R0
+	MOVB	R0, K33466		; MISL1 - Ninja object
+	CLR	R0
+	MOVB	R0, K33464		; set HELD value
+	CALL	DrawHeld			; HLDOD
+	MOVB	K01604, R0
+	MOVB	R0, K33473
+	MOVB	R0, K33474
+	call	GetKey
+	MOV	#K33474, R3
+	BIT	#000010, R0		; bit 3 ?
+	BEQ	K51546
+	BR	K51556
+K51546:	BIT	#000004, R0		; bit 2 ?
+	BEQ	K51620
+	INCB	(R3)
+K51556:	INCB	(R3)
+	CLRB	037662
+	BR	K51630
+K51566:	TSTB	037662
+	BEQ	K51620
+	mov	#BuffG1+32., R2
+	MOVB	K36264, R0		; get DIR
+	DECB	R0
+	BNE	10$
+	mov	#BuffG1+37., R2
+10$:	CALL	K51646			; HITGQ
+K51620:	CLRB	037662
+	call	GetKey
+K51630:	BIT	#000020, R0		; bit 4 fire ?
+	BNE	K51642
+	JMP	K55262
+K51642:	JMP	K25276
+; HITGQ procedure
+K51646:	MOV	K36212, R3		; get MANPS
+	ADD	R2, R3
+	MOVB	(R3), R0
+	INCB	R0
+	BEQ	K51702
+	MOVB	#001, R0
+K51666:	MOVB	R0, K26672		; set GDHIT = 1
+	MOVB	#001, K37662		; set SPEED = 1
+	RETURN
+K51702:	MOVB	001100(R3), R0
+	INCB	R0
+	BNE	K51714
+	RETURN
+K51714:	MOVB	#002, R0
+	BR	K51666			; => LE234
+; KICKP:
+K51722:	MOVB	#002, K37662		; set SPEED = 2
+	MOV	#K51744, R3		; KIKHP -> (VECTN+1)
+	MOV	#047410, R2		; KICKC -> (CHARN+1)
+	JMP	K55246			; => SETVC - set vectors
+; KIKHP: ??? - Vector for (VECTN+1)
+K51744:	MOV	#037662, R3
+	DECB	(R3)
+	BNE	K51770
+	MOV	#K52030, R3		; KIK2P -> (VECTN+1)
+	MOV	#047336, R2		; JUMPC -> (CHARN+1)
+	JMP	K55246			; => SETVC - set vectors
+K51770:	MOVB	050117, R0
+	INCB	R0
+	BEQ	K52024
+	mov	#BuffG1+33., R2
+	MOVB	K36264, R0		; get DIR
+	DECB	R0
+	BNE	10$
+	mov	#BuffG1+36., R2
+10$:	CALL	K51646			; HITGQ
+K52024:	JMP	K25276
+; KIK2P: ??? - Vector for (VECTN+1)
+K52030:	JMP	K55262			; => SETST
+;
+K52034:	.WORD	1			; ENTIM timer
+;
+; RESTP procedure
+K52036:	MOV	#K52034, R3		; ENTIM addr
+	DECB	(R3)			; decr ENTIM
+	BNE	K52116			; NZ => RETURN
+	NOP1
+	MOVB	#002, (R3)		; set ENTIM = 2
+	CMPB	<L14506+2>, #016	; (NRGCR+1) == 14. ?
+	BNE	K52076			; NZ => NGOKU
+	CMPB	<L14534+2>, #001	; (NRGPX+1) == 1 ?
+	BEQ	K52116			; Z => RETURN
+	NOP1
+; NGOKU:
+K52076:	CALL	L14442			; NRGUP
+	MOV	#000001, R1
+	CALL	L14502			; DECN2
+	CALL	L14442			; NRGUP
+K52116:	RETURN
+; STANP: Ninja standing - Vector for (VECTN+1)
+K52120:	CALL	K52036			; RESTP
+	CALL	K50274			; FLORQ
+	BNE	K52162
+	MOV	#047606, R2		; -> (CHARN+1)
+	MOV	#000001, R0
+	MOV	R0, <K54510+2>		; set (HIGHT+1)
+	MOVB	R0, K33542		; set JUMP
+K52152:	MOV	#K54302, R3		; LEP5P -> (VECTN+1)
+	JMP	K55246			; => SETVC - set vectors
+K52162:	MOVB	K17200, R0		; get BIKER
+	CMPB	R0, #020		; == 16. ?
+K52172:	BNE	K52200
+	JMP	K53066
+K52200:	CMPB	R0, #310		; == 200. ?
+	BNE	K52212
+	JMP	Completed		; yes => COMPL
+K52212:	call	GetKey
+	BIT	#000020, R0		; bit 4 fire ?
+	BNE	K52230
+	JMP	K53042			; => NFIRE
+
+; Fire key; Console check
+K52230:	MOVB	050134, R0		; get (MANBF+20.)
+	INCB	R0
+	BNE	K52244
+	JMP	K52772			; => NCONU
+K52244:	MOV	K36212, R3		; get MANPS
+	add	#BuffO+98., R3
+	CMPB	(R3), #000212		; == 138. ?
+	BEQ	K52266
+	JMP	K52772			; no => NCONU
+
+; Console: check for LIFTSWAP or FENSWAP or CODEROP
+K52266:	call	SoundConsole
+	MOV	<K13332+2>, R3		; get (RM+1)
+	CMPB	(R3), #075		; room type == $3D ?
+	BEQ	K52446			; yes => K2DAQ
+	CMPB	(R3), #115		; room type == $4D ?
+	BEQ	K52402			; yes => KODAQ
+
+; NSEEC:
+K52312:	MOVB	060610, K01602		; get LFT1
+	MOV	#000356, R0
+	XOR	R0, K01602		; XOR 238.
+	MOVB	K01602, 060610		; set LFT1
+	COMB	K60677			; invert LFT3
+	MOV	#K52702, R3		; " LIFT IS DOWN "
+	MOVB	K60677, R0		; get LFT3
+	INCB	R0
+	BEQ	K52362			; => BUTCR
+	MOV	#K52720, R3		; "  LIFT IS UP  "
+; BUTCR:
+K52362:	MOV	#000016, R1		; 14.
+	MOV	#050146, R2		; screen coords
+	CALL	PrintStr		; PRINT string
+	JMP	K25276
+
+; KODAQ: Console, room type == $4D - room right to rocket
+K52402:	MOVB	K13224+2, R0		; get (DRFNT+1)
+	INCB	R0
+	BEQ	K52312
+	MOV	#031222, R3		; FENRM+1
+	MOVB	(R3), R5
+	MOV	#000021, R0		; 17.
+	XOR	R0, R5
+	MOVB	R5, (R3)		; set (FENRM+1)
+	MOV	#K52754, R3		; " FENCE IS OFF "
+	INCB	R5
+	BEQ	K52362			; => BUTCR
+	MOV	#K52736, R3		; "  FENCE IS ON "
+	BR	K52362			; => BUTCR
+; K2DAQ: Console, room type == $3D - room left to rocket
+K52446:	MOV	#050146, R2
+	MOV	#000016, R1		; 14.
+	MOV	#K51145, R3		; TAPCT addr
+	MOVB	K51146, R0		; get TAPTT
+	BEQ	K52472			; 0 => KINTE
+	MOVB	R0, (R3)		; TAPTT -> TAPCT
+; KINTE
+K52472:	MOVB	(R3), R0		; get TAPCT
+	BEQ	K52576			; 0 => KODNA
+	CMPB	K52626, (R3)		; get NTPND - tapes needed
+	BHIS	K52612			; => KDNTA
+K52504:	MOVB	K51146, R0		; get TAPTT
+	BNE	K52526			; => ALRGM
+	PUSH	R2
+	PUSH	R1
+	CALL	L15506			; PLFHN - MONEY up 500.
+	POP	R1
+	POP	R2
+
+; ALRGM:
+K52526:	MOVB	K51145, K51146		; copy TAPCT -> TAPTT
+	MOV	#K52646, R3		; "CODE ACCEPTED"
+	CALL	PrintStr		; PRINT string
+
+; ERACD:
+; erase codes from screen
+K52544:
+	JMP	K25276			; => ENDVC
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+
+; KODNA:
+K52576:	MOV	#K52630, R3		; " CODE  NEEDED "
+	CALL	PrintStr		; PRINT string
+	JMP	K25276			; => ENDVC
+
+; KDNTA:
+K52612:	BEQ	K52504			; => JIUWC
+	MOV	#K52664, R3		; "CODE  REJECTED"
+	CALL	PrintStr		; PRINT string
+	BR	K52544			; => ERACD
+;
+K52626:	.WORD	0			; NTPND - tapes needed
+;
+K52630:	.ASCII	/ CODE  NEEDED /
+K52646:	.ASCII	/CODE  ACCEPTED/
+K52664:	.ASCII	/CODE  REJECTED/
+K52702:	.ASCII	/ LIFT IS DOWN /
+K52720:	.ASCII	/  LIFT IS UP  /
+K52736:	.ASCII	/  FENCE IS ON /
+K52754:	.ASCII	/ FENCE IS OFF /
+;
+; NCONU:
+K52772:	TSTB	K33465			; check NEAR
+	BEQ	K53020			; 0 => MAZZ1
+	MOV	#000002, R0		; 2. -> SPEED
+	MOV	#047212, R2		; CRUTC -> (CHARN+1)
+	MOV	#K51002, R3		; TAKEP -> (VECTN+1)
+	JMP	K55242			; => SETSP - set SPEED and vectors
+; MAZZ1:
+K53020:	MOVB	#001, K37662		; set SPEED = 1
+	MOV	#K51324, R3		; FIREP -> (VECTN+1)
+	MOV	#046704, R2		; PUNCC -> (CHARN+1)
+	JMP	K55246			; => SETVC - set vectors
+; NFIRE: Check left direction
+K53042:	BIT	#000002, R0		; bit 1 left ?
+	BEQ	K53106			; no => NLEFT
+	TSTB	K36264			; check DIR
+	BEQ	K53066
+	DECB	K36264			; decrement DIR
+	JMP	K25276			; => ENDVC
+; LOK:
+K53066:	CALL	K53612			; SETLG
+	MOV	#K40044, R3		; LEFTP -> (VECTN+1)
+	MOV	#046756, R2		; RUNC -> (CHARN+1)
+	JMP	K55246			; => SETVC - set vectors
+; NLEFT: Check down direction
+K53106:	BIT	#000004, R0		; bit 2 ? down
+	BEQ	K53300			; no => NDOWN
+	MOVB	050162, R0		; get (MANBF+42.)
+	TSTB	K36264			; check DIR
+	BEQ	K53132
+	MOVB	050167, R0		; get (MANBF+47.)
+; FEGJB:
+K53132:	CMPB	R0, #000324		; == 212. ?
+	BNE	K53166			; no => NLFTD
+	movb	BuffB+549., R0
+	CMPB	R0, #010		; == 10. ?
+	BNE	K53166
+	CALL	L10300			; MONYP - Print MONEY
+	MOV	#K54562, R3		; LIFTD address
+	JMP	K55252			; => SETV2 - set vector
+; NLFTD:
+K53166:	MOVB	050164, R0
+	TSTB	K36264			; check DIR
+	BEQ	K53204
+	MOVB	050165, R0		; get (MANBF+44.)
+K53204:	CMPB	R0, #054		; == 44. ?
+	BEQ	K53240			; yes => SETL2
+	CMPB	R0, #045		; == 37. ?
+	BEQ	K53240			; yes => SETL2
+	CMPB	R0, #011		; == 9. ?
+	BEQ	K53240			; yes => SETL2
+	CMPB	R0, #005		; == 5 ?
+	BEQ	K53240			; yes => SETL2
+	JMP	K50744			; => SETCR
+; SETL2:
+K53240:	MOV	#053646, R3		; LADDP address
+	MOV	#046632, R2		; LADDC address
+	MOV	R2, <K36276+2>
+	MOV	R3, <K25272+2>		; set JMP address
+	JMP	K54172			; => ONTLD
+; SETLD:
+K53264:	MOV	#K53646, R3		; LADDP -> (VECTN+1)
+	MOV	#046632, R2		; LADDC -> (CHARN+1)
+	JMP	K55246			; => SETVC - set vectors
+; NDOWN: Check right direction
+K53300:	BIT	#000001, R0		; bit 0 ? right
+	BEQ	K53352			; no => NRITE
+	MOVB	K36264, R0		; get DIR
+	CMPB	R0, #001
+	BEQ	K53332
+	INCB	R0
+	MOVB	R0, K36264		; set DIR
+	JMP	K25276			; => ENDVC
+; ROK:
+K53332:	CALL	K53612			; SETLG
+	MOV	#K37524, R3		; RITEP -> (VECTN+1)
+	MOV	#046756, R2		; RUNC -> (CHARN+1)
+	JMP	K55246			; => SETVC - set vectors
+; NRITE:
+K53352:	BIT	#000010, R0		; bit 3 ? kick
+	BEQ	K53606			; no => NKICK
+	TSTB	K36264			; check DIR
+	BNE	K53440			; => NPOSR
+	MOV	K36212, R3		; get MANPS
+	add	#BuffO+64., R3
+	CMPB	(R3), #000142		; == 98. ?
+	BNE	K53440			; no => NPOSR
+	MOVB	#376, K17200		; set BIKER = 254.
+	MOV	#K40576, R3		; BIKEP -> (VECTN+1)
+	MOV	#046244, R2		; BIKNC -> (CHARN+1)
+	MOVB	#375, K17200		; set BIKER = 253.
+	MOVB	#000155, R0		; 109. -> SPEED
+	JMP	K55242			; => SETSP - set SPEED and vectors
+; NPOSR:
+K53440:	MOVB	050162, R0		; get (MANBF+42.)
+	TSTB	K36264			; check DIR
+	BEQ	K53456
+	MOVB	050167, R0		; get (MANBF+47.)
+K53456:	CMPB	R0, #000324		; == 212. ?
+	BNE	K53512			; no => NLFTU
+	movb	BuffB+549., R0		; get (BUFFB+549.)
+	CMPB	R0, #000010		; == 8. ?
+	BEQ	K53512			; yes => NLFTU
+	CALL	L10300			; MONYP - Print MONEY
+	MOV	#054774, R3		; LIFTU address
+	JMP	K55252			; => SETV2 - set vector
+; NLFTU:
+K53512:	MOVB	050156, R0		; get (MANBF+38.)
+	TSTB	K36264			; check DIR
+	BEQ	K53530
+	MOVB	050157, R0		; get (MANBF+39.)
+K53530:	CMPB	R0, #000011		; == 9. ?
+	BNE	K53542
+K53536:	JMP	K53264			; => SETLD
+K53542:	CMPB	R0, #005		; == 5. ?
+	BEQ	K53536			; => SETLD
+	CMPB	R0, #045		; == 37. ?
+	BEQ	K53536			; => SETLD
+	CMPB	R0, #054		; == 44. ?
+	BEQ	K53536			; => SETLD
+	CMPB	R0, #020		; == 16. ?
+	BEQ	K53536			; => SETLD
+	MOV	#K51722, R3		; KICKP -> (VECTN+1)
+	MOV	#047336, R2		; JUMPC -> (CHARN+1)
+	JMP	K55246			; => SETVC - set vectors
+; NCICK:
+K53606:	JMP	K25276			; => ENDVC
+
+; SETLG procedure
+K53612:	MOV	#K47030, R3		; LEG1 address
+	MOV	R3, K41150+2
+	MOV	#K47006, R2
+	MOV	#000011, R1		; 18. (9 words)
+10$:	mov	(R3)+, (R2)+		; <
+	sob	R1, 10$			; repeat
+	CLRB	K41172			; set LEGP = 0
+	RETURN
+	NOP1
+
+; LADDP:
+K53646:	MOVB	050156, R0		; get (MANBF+38.)
+	TSTB	K36264			; check DIR
+	BEQ	K53664
+	MOVB	050157, R0		; get (MANBF+39.)
+K53664:	CMPB	R0, #000005		; == 5 ?
+	BEQ	K53742			; yes => STLOL
+	CMPB	R0, #000011		; == 9. ?
+	BEQ	K53742			; yes => STLOL
+	CMPB	R0, #000020		; == 16. ?
+	BEQ	K53742			; yes => STLOL
+	CMPB	R0, #000045		; == 37. ?
+	BEQ	K53742			; yes => STLOL
+	CMPB	R0, #000054		; == 44. ?
+	BEQ	K53742			; yes => STLOL
+	CMPB	R0, #000314		; == 204. ?
+	BEQ	K53742			; yes => STLOL
+	CMPB	R0, #000377		; == 255. ?
+	BEQ	K53742			; yes => STLOL
+	JMP	K55262			; => SETST
+; STLOL:
+K53742:	call	GetKey
+	BIT	#000001, R0		; bit 0 right ?
+	BEQ	K53764			; no => NTOFR
+	MOVB	#001, K36264		; set DIR = 1
+	BR	K53776			; => OFLDQ
+; NTOFR:
+K53764:	BIT	#000002, R0		; bit 1 left ?
+	BEQ	K54032			; no => NTOFL
+	CLRB	K36264			; DIR = 0 left
+; OFLDQ:
+K53776:	CMPB	050155, #000307		; (MANBF+37.) compare to 199.
+	BHIS	K54026			; => ENDVC
+	MOVB	050163, R0		; get (MANBF+43.)
+	INCB	R0
+	CMPB	R0, #000307		; compare to 199.
+	BLO	K54026			; => ENDVC
+K54022:	JMP	K55262			; => SETST
+K54026:	JMP	K25276			; => ENDVC
+; NTOFL:
+K54032:	BIT	#000010, R0		; bit 3 ?
+	BEQ	K54134			; no => NUPL
+	MOVB	K36211, R0		; get MAND
+	DECB	R0
+	BMI	K54076			; => LCLUY
+	MOV	K36212, R3		; get MANPS
+	add	#BuffB-30., R3		; + <BUFFB-30.>
+	MOVB	(R3), R0
+	CMPB	R0, #000314		; == 204. ?
+	BEQ	K54076			; yes => LCLUY
+	CMPB	R0, #000307		; compare to 199.
+	BHIS	K54026			; => ENDVC
+; LCLUY:
+K54076:	CALL	K40726			; OFTOP
+	DECB	K36211
+	SUB	#000040, K36212		; MANPS
+; NXRNG:
+K54114:	RORB	K36264			; DIR
+	BHIS	K54124
+	.WORD	005727	;TST #000261	; XOR 1
+K54124:	SEC
+	ROLB	K36264			; DIR
+	BR	K54026			; => ENDVC
+K54134:	BIT	#000004, R0
+	BEQ	K54026			; => ENDVC
+	MOVB	050164, R0
+	INCB	R0
+	CMPB	R0, #000307
+	BHIS	K54022
+	MOVB	050165, R0
+	INCB	R0
+	CMPB	R0, #000307
+	BHIS	K54022
+K54172:	CALL	K54212			; OFBOT
+	INCB	K36211
+	ADD	#000040, K36212		; MANPS
+	BR	K54114
+; OFBOT procedure
+K54212:	MOVB	K36211, R0
+	CMPB	R0, #000013		; == 11. ?
+	BEQ	K54226
+	RETURN
+K54226:	MOV	#K36214, R3		; RMDN addr
+	INCB	(R3)			; down one level
+	POP	R3
+	SUB	#000021, R0
+	MOVB	R0, K36211
+	MOV	K36212, R3		; get MANPS
+	SUB	#001040, R3
+	MOV	#000040, R2		; down one level for (RM+1)
+; PIGGS:
+K54262:	MOV	R3, K36212		; set MANPS
+	ADD	R2, <K13332+2>		; (RM+1) += R2
+	nop
+	nop
+	JMP	K13072			; => INISC
+; LEP5P:
+K54302:	CALL	K54212			; OFBOT
+	CALL	K50274			; FLORQ
+	BEQ	K54530			; => HJRRF
+	TSTB	K33540			; check DEAD
+	BEQ	K54510			; 0=alive => HIGHT
+; Dead
+	MOV	#000024, R1		; 20.
+	MOV	#K54440, R2		; " MISSION TERMINATED "
+	MOVB	K33540, R0		; get DEAD
+	DECB	R0
+	BNE	K54346			; => TIMMY
+	MOV	#K54464, R2		; "  MISSION FAILURE  "
+; TIMMY:
+K54346:	mov	#BuffO+262., R3
+	CALL	PrintOnBgr			; BUFOM - Draw string as tiles
+	MOVB	K17200, R0		; get BIKER
+	CMPB	R0, #000375		; == 253. ?
+	BNE	10$			; no => ALRTD
+	MOV	#K17204, R2		; BIKEC
+	MOV	#BuffO, R1		; BUFFO Front tile screen address
+	CALL	K40436			; DRBIK
+; ALRTD:
+10$:	MOV	#K46162, R2		; NINDC address
+	MOV	#BuffD, R1		; BUFFD address
+	CALL	K40436			; DRBIK
+	MOV	#047534, R2		; DEDNC dead Ninja tiles -> (CHARN+1)
+	MOV	#K55224, R3		; DIING -> (VECTN+1)
+	MOVB	#40, R0			; -> SPEED
+	JMP	K55242			; => SETSP - set SPEED and vectors
+;
+K54440:	.ASCII	/@MISSION@TERMINATED@/
+K54464:	.ASCII	/@@MISSION@@FAILURE@@/
+;
+; HIGHT:
+K54510:	MOV	#000001, R1		; 1.
+	CALL	Decen			; DECEN
+	CALL	L15650			; Sound CRUNCH noise
+	JMP	K50744			; => SETCR
+; HJRRF:
+K54530:	MOV	#<K54510+2>, R3		; HIGHT+1 addr
+	CMPB	#000372, (R3)		; == 250. ?
+	BEQ	K54544			; yes => NOEL
+	INCB	(R3)
+; NOEL:
+K54544:	INCB	K36211			; increment MAND
+	ADD	#000040, K36212		; MANPS
+	JMP	K25276			; => ENDVC
+; LIFTD: lift down
+K54562:	MOVB	#021, 060610		; set LFT1 = 17.
+	CLRB	K60677			; set LFT3 = 0 UP
+	CALL	K52036			; RESTP
+	CALL	K54212			; OFBOT
+	INCB	K36211			; increment MAND
+	MOV	K36212, R3		; get MANPS
+	ADD	#000040, R3		; + 32.
+	MOV	R3, K36212		; set MANPS
+	add	#BuffB+192., R3
+	MOV	#000006, R1
+K54634:	MOVB	#000010, (R3)+
+	SOB	R1, K54634		; repeat
+	CMPB	K36211, #000013		; MAND == 11. ?
+	BEQ	K54710			; yes => JHGYG
+	ADD	#000032, R3		; + 26.
+	MOV	#070602, R2
+	MOV	#000006, R1		; 6.
+K54666:	MOVB	(R2)+, (R3)+		; <
+	SOB	R1, K54666		; repeat
+	SUB	#001100, R3
+	MOV	#000006, R1		; 6.
+K54702:	MOVB	#001, -(R3)		; <
+	SOB	R1, K54702		; repeat
+; JHGYG:
+K54710:	call	GetKey
+	MOV	#K54774, R3		; LIFTU address
+	BIT	#000010, R0		; bit 3 up ?
+	BEQ	K54732
+	JMP	K55252			; => SETV2 - set vector
+K54732:	MOVB	#177777, R0
+	MOVB	R0, 060610		; set LFT1 = 255.
+	MOVB	R0, K60677		; set LFT3 = 255. DOWN
+	MOV	K36212, R3		; get MANPS
+	add	#BuffB+256., R3
+	CMPB	(R3), #000372
+	BEQ	K54770
+	JMP	K25276			; => ENDVC
+K54770:	JMP	K50744			; => SETCR
+; LIFTU: lift up
+K54774:	MOV	#177777, R0
+	MOVB	R0, 060610		; set LFT1 = 255.
+	MOVB	R0, K60677		; set LFT3 = 255. DOWN
+	CALL	K52036			; RESTP
+	CALL	K40726			; OFTOP
+	DECB	K36211			; decrement MAND
+	MOV	K36212, R3		; get MANPS
+	SUB	#000040, R3
+	MOV	R3, K36212		; set MANPS
+	CMPB	K36211, #000013
+	BEQ	K55134
+	add	#BuffB+224., R3
+	MOV	#000006, R1
+	MOV	#070602, R2
+K55064:	MOVB	(R2)+, (R3)+		; <
+	SOB	R1, K55064		; repeat
+	CMPB	K36211, #000012
+	BEQ	K55134
+	ADD	#000032, R3
+	MOV	#000006, R1
+K55110:	MOVB	#000010, (R3)+		; <
+	SOB	R1, K55110		; repeat
+	SUB	#001100, R3
+	MOV	#000006, R1
+K55126:	MOVB	#001, -(R3)		; <
+	SOB	R1, K55126		; repeat
+; JHGY2:
+K55134:	call	GetKey
+	MOV	#K54562, R3		; LIFTD address
+	BIT	#000004, R0		; bit 2 ? (down pressed)
+	BNE	K55252			; yes => SETV2 - set vector
+	MOVB	#000021, 060610		; set LFT1 = 17.
+	CLRB	K60677			; set LFT3 = 0 UP
+	MOV	K36212, R3		; get MANPS
+	add	#BuffB+191., R3
+	CMPB	(R3), #000010
+	BEQ	K55206
+	JMP	K25276			; => ENDVC
+K55206:	DECB	K36211			; decrement MAND
+	SUB	#000040, K36212		; MANPS
+	JMP	K55262
+
+; DIING: Dying Ninja
+K55224:	DECB	K37662			; decr SPEED
+	BEQ	K55236
+	JMP	K25276			; => ENDVC
+K55236:	jmp	Finished
+
+; SETSP: Set SPEED and vectors
+K55242:	MOVB	R0, K37662		; set SPEED
+; SETVC: Set vectors
+K55246:	MOV	R2, <K36276+2>		; set (CHARN+1)
+; SETV2: Set vector
+K55252:	MOV	R3, <K25272+2>		; set (VECTN+1)
+	JMP	K25276			; => ENDVC
+; SETST: Set Standing
+K55262:	CLRB	K33542			; clear JUMP
+	MOV	#K52120, R3		; STANP -> (VECTN+1)
+	MOV	#046561, R2		; STANC -> (CHARN+1)
+	JMP	K55246			; => SETVC - set vectors
+
+; DROBR
+; facing left, R3 in BufFD
+K55302:	PUSH	R4
+	PUSH	R5
+	MOV	R1, R5
+; PUM06:
+K55310:	MOV	#050115, R1		;WARN
+	MOV	@#K36212, R4		; get MANPS
+	ADD	#BuffB, R4		; BUFFB Back tile screen address
+	MOVB	K01604, 055464
+	ADD	#000005, R2
+; LROP6:
+K55336:	MOVB	K55464, K01604		; <
+	MOVB	K47666, K01606
+K55352:	CMPB	K01606, #000040		; 32.
+	BHIS	K55406
+	CMPB	K01607, #000022		; 18.
+	BHIS	K55406
+	MOVB	(R4), R0
+K55374:	NOP		;!!MUT-CMD!!  NOP or MOVB R0,(R1)  see L10224
+	CMPB	R0, #000307
+	BHIS	K55406
+	MOVB	(R2), (R3)
+K55406:	INCB	K01606
+	INC	R4
+	DEC	R1
+	INC	R3
+	DEC	R2
+	DECB	K01604
+	BNE	K55352
+	ADD	#000032, R3
+	ADD	#000014, R2		; 12.
+	INCB	K01607
+	ADD	#000032, R4
+	ADD	#000014, R1		; 12.
+	SOB	R5, K55336		; repeat => LROP6
+	POP	R5
+	POP	R4
+	RETURN
+;
+K55464:	.WORD	6
+;
+
+; SWIRP: Swim - Vector for (VECTN+1)
+K55466:	MOVB	K36210, R0		; get MANA
+	CMPB	R0, #000035		; == 29. ?
+	BNE	K55504
+	JMP	K37746			; => RITSC - go one room right
+K55504:	CMPB	R0, #000032		; == 26. ?
+	BHIS	K55534			; => NCHK1
+	MOV	K36212, R3		; get MANPS
+	add	#BuffB+198., R3
+	CMPB	(R3), #000307
+	BHIS	K55546			; => BLOW1
+	MOVB	K36210, R0		; get MANA
+; NCHK1:
+K55534:	INCB	R0
+	MOVB	R0, K36210		; set MANA
+	INC	K36212			; increment MANPS
+; BLOW1:
+K55546:	CALL	K55736			; LEGSW
+	call	GetKey
+	BIT	#000001, R0		; bit 0 right ?
+K55562:	BNE	K55570
+	JMP	K50744			; => SETCR
+K55570:	mov	#BuffO+98., R2		; BUFFO+98.
+	CALL	K55630			; LFEDQ
+	MOV	K36212, R3		; get MANPS
+	ADD	R2, R3
+	TSTB	(R3)
+	BNE	K55624			; => NFLOT
+	DECB	K36211			; decrement MAND
+	SUB	#000040, K36212		; MANPS -= 32.
+; NFLOT:
+K55624:	JMP	K25276			; => ENDVC
+;
+; LFEDQ Procedure: If MANA != 253., increment R2
+K55630:	CMPB	K36210, #000375		; MANA == 253. ?
+	BNE	K55642			; no => return
+	INC	R2
+K55642:	RETURN
+
+; SWILP:
+K55644:	MOVB	K36210, R0		; get MANA
+	CMPB	R0, #000375
+	BNE	K55662
+	JMP	K40012			; go one room left
+K55662:	CMPB	R0, #000001
+	ble	K55710			; already going out of screen, do not check furtheer
+	nop
+	mov	K36212, R3
+	add	#BuffB+191., R3
+	CMPB	(R3), #000307
+	BHIS	K55720
+K55710:	DECB	K36210			; decrement MANA
+	DEC	K36212			; decrement MANPS
+K55720:	CALL	K55736			; LEGSW
+	call	GetKey
+	BIT	#000002, R0		; bit 1 ?
+	BR	K55562			; => FLOTQ
+; LEGSW procedure
+K55736:	MOVB	047313, K01602		; room number
+	MOV	#000007, R0
+	XOR	R0, K01602		; FOOTC
+	MOVB	K01602, 047313		; room number
+	RETURN
+
+
+; K55764 = RM0		Room sequences, 246. rooms
+; K70632 = MAP		World map, 32x28 bytes
+; K72572 = RMS		Room sequence addresses, 246. rooms
+@include S2ROOM.MAC
+K60677 = K60640 + 37			; LFT3 lift position byte: 377 = DOWN, 0 = UP
+
+; GuardTiles:
+@include S2SPRT.MAC
+
+
+; ///////////////////////////////////////////////////////////////////////////////////////
+; // out of sync by address from here
+
+
+; GTBAK procedure
+L10200:	MOV	#K50110, R3		; MANBF
+	MOV	#000030, R1		; 24.
+	MOV	#177777, R2
+L10214:	MOV	R2, (R3)+		; <
+	SOB	R1, L10214		; repeat
+	MOV	#110011, R0		; MOVB R0,(R1) command
+L10224:	MOV	R0, K47776		; set command
+	MOV	R0, K55374		; set command
+	RETURN
+
+; GTBK2 Procedure
+L10236:	MOV	#000240, R0		; NOP command
+	BR	L10224
+
+; MONUP procedure: MONEY up by R1
+L10244:	MOV	#StrMoney+13, R3		; < address
+	MOV	#000006, R5		; 6.
+	MOV	#000072, R0		; 58.
+L10260:	INCB	(R3)			; <
+	CMPB	R0, (R3)
+	BNE	L10276			; => PRMON
+	MOVB	#060, (R3)		; '0'
+	DEC	R3
+	SOB	R5, L10260		; repeat
+L10276:	SOB	R1, L10244		; repeat
+
+; MONYP entry point: Print MONEY
+L10300:	mov	#050146, R2
+	mov	#16, R1				; size 14.
+	mov	#StrMoney, R3			; " PAY $0000000 "
+	jmp	PrintStr
+
+
+; space chars for strings on screen
+L10560:	.ASCIZ	/                     /	; SPCHR 21. space char
+
+
+; Procedure: Calculate screen attr address
+L13242:	MOV	R2, #000000		;!!MUT-ARG!!
+	BIC	#176037, R2		; keep bits: 001111100000 = row * 32.
+	PUSH	R2
+	ASL	R2
+	ASL	R2			; R2 = row * 128.
+	ADD	(SP), R2		; R2 = row * 160.
+	MOV	R2, (SP)
+	ASL	R2
+	ASL	R2			; R2 = row * 640.
+	ADD	R2, (SP)		; (SP) = row * 800.
+	MOV	<L13242+2>, R2
+	BIC	#177740, R2		; 0..31. = col
+	ADD	(SP)+, R2
+	ADD	#C_VADDR, R2		; R2 = screen address
+	RETURN
+
+; NRGUP procedure ??
+L14442:	MOV	#<L14534+2>, R3		; NRGPX+1
+	CLC
+	RORB	(R3)
+	BLO	L14456	;TODO
+	RETURN
+L14456:	BISB	#000200, (R3)
+	MOV	#<L14506+2>, R3		; NRGCR+1
+	INCB	(R3)
+L14470:	RETURN
+
+; DECEN procedure: Decrement energy, R1 = ??
+Decen:	return
+	MOV	#000001, R0		;!!MUT-ARG!!
+	BEQ	L14470			; 0 => to RETURN
+; DECN2:
+L14502:	PUSH	R1
+	PUSH	R5
+; NRGCR:
+L14506:	MOV	#000000, R2		;!!MUT-ARG!!
+	ADD	#050245, R2		; screen coords
+	PUSH	R4
+	call	ScrToVaddr
+	POP	R4
+	MOV	#8.*C_SCRWID, R3
+	ADD	R2, R3
+; NRGPX:
+L14534:	MOVB	#000, R5		;!!MUT-ARG!!
+	MOV	#8., R1			; DY
+	MOVB	ReflectionTable(R5), R5		; mirror byte для УКНЦ
+	BIC	#177400, R5		; УКНЦ оставляем байт
+L14560:
+; TODO:
+;	MOV	R3, @#176640	; УКНЦ
+;	XOR	R5, @#176642	; УКНЦ
+;	MOV	R2, @#176640	; УКНЦ
+;	XOR	R5, @#176642	; УКНЦ
+	ADD	#C_SCRWID, R2		; next line
+	ADD	#C_SCRWID, R3
+	SOB	R1, L14560		; repeat
+	MOV	#<L14534+2>, R3
+	ASLB	(R3)
+	BHIS	L14664			; => NRGC1
+	INCB	(R3)
+	MOV	#<L14506+2>, R3
+	DECB	(R3)
+	BNE	L14664			; => NRGC1
+; Out of energy, dead
+	POP	R5
+	POP	R1
+	MOVB	#001, K33540		; set DEAD = 1
+	CLRB	<Decen+2>		; clear (DECEN+1)
+	RETURN
+
+; NRGC1:
+L14664:	POP	R5
+	POP	R1
+	SOB	R1, L14502		; repeat => DECN2
+	RETURN
+
+; COMPL game is completed
+Completed:
+	; TODO: pause a little
+	; TODO: check for real completition?
+	; all codes accepted etc?
+Finished:
+	clr	@#PpuKeys
+10$:	bit	#220, @#PpuKeys		; check FIRE | STOP keys
+	beq	10$
+	jmp	Start			; FIN
+
+; money up 500
+L15506:	MOV	#000372, R1		; 250.
+	CALL	L10244			; MONUP
+	MOV	#000372, R1		; 250.
+	JMP	L10244			; MONUP
+
+L15646:	.WORD	0	; RMTIME
+
+; sound procedure
+L15650:	jmp	Sound2
+
+; Nina tiles 8x8
+NinaTiles:
+	.byte	000,000,200,200,200,200,200,104,000,007,017,017,014,017,037,151 ; 000
+	.byte	216,216,306,356,354,374,374,374,036,377,371,366,356,355,073,367	; 002
+	.byte	000,000,000,001,001,003,003,003,274,234,210,200,200,300,300,140 ; 004
+	.byte	354,237,040,076,077,177,117,167,003,003,000,000,000,000,000,000 ; 006
+	.byte	340,340,360,360,360,360,370,370,372,371,377,373,371,361,360,340 ; 008
+	.byte	170,070,074,074,074,064,054,036,340,300,300,300,300,300,100,200 ; 010
+	.byte	001,001,001,001,001,003,002,003,000,000,000,000,000,200,200,340 ; 012
+	.byte	036,016,006,006,007,007,003,003,200,000,000,000,000,000,200,200 ; 014
+	.byte	003,003,003,003,003,007,007,007,000,070,170,174,144,174,174,170 ; 016
+	.byte	000,000,000,000,000,000,000,007,000,300,340,300,000,000,000,000 ; 018
+	.byte	000,171,377,377,360,000,000,000,000,374,377,377,347,200,200,000 ; 020
+	.byte	147,377,377,356,356,231,377,377,017,016,006,007,016,016,016,016 ; 022
+	.byte	000,200,200,200,200,300,300,140,377,377,100,117,177,177,317,367 ; 024
+	.byte	017,007,007,003,000,000,000,000,000,000,000,000,034,076,076,062 ; 026
+	.byte	000,000,000,000,000,200,200,000,276,174,374,160,270,275,335,334 ; 028
+	.byte	017,062,104,111,123,023,003,003,300,300,200,000,000,000,000,000 ; 030
+	.byte	360,377,377,174,240,360,360,020,001,001,002,003,001,001,003,003 ; 032
+	.byte	360,360,360,370,374,376,376,377,003,003,003,003,003,001,001,001 ; 034
+	.byte	357,377,376,374,360,340,340,360,001,000,000,000,003,016,037,074 ; 036
+	.byte	220,160,160,160,060,070,074,076,060,060,040,000,000,000,000,000 ; 038
+	.byte	000,000,000,000,000,000,200,300,360,360,360,370,376,377,377,377 ; 040
+	.byte	007,007,003,003,003,003,003,001,300,300,300,200,000,000,000,000 ; 042
+	.byte	367,343,343,347,313,312,234,070,001,001,001,001,003,003,003,005 ; 044
+	.byte	160,140,140,100,100,000,000,000,006,016,014,014,030,030,074,036 ; 046
+	.byte	000,000,000,000,000,200,300,340,370,370,374,376,377,377,377,377 ; 048
+	.byte	007,007,007,007,003,003,003,003,340,340,340,300,200,000,000,000 ; 050
+	.byte	347,303,303,203,204,007,007,017,003,007,007,017,017,037,177,336 ; 052
+	.byte	016,034,030,030,034,014,000,000,350,360,200,000,000,000,000,000 ; 054
+	.byte	001,007,017,016,014,014,014,016,000,000,000,000,000,000,200,200 ; 056
+	.byte	360,360,370,374,376,377,377,377,007,007,007,007,017,017,017,017 ; 058
+	.byte	300,300,300,300,300,300,100,300,217,017,007,003,001,001,001,000 ; 060
+	.byte	017,017,077,076,176,174,360,140,000,000,000,000,000,000,001,003 ; 062
+	.byte	340,140,140,160,060,070,074,036,200,000,000,000,000,000,000,000 ; 064
+	.byte	007,017,034,160,140,100,100,000,000,000,000,000,200,300,340,360 ; 066
+	.byte	000,300,360,376,377,377,377,377,376,374,177,177,377,377,377,301 ; 068
+	.byte	017,007,067,173,174,177,177,077,000,000,200,300,360,374,077,077 ; 070
+	.byte	370,376,177,037,003,000,000,000,007,001,000,000,000,000,000,000 ; 072
+	.byte	074,034,034,016,016,007,017,077,200,300,300,300,300,200,200,200 ; 074
+	.byte	075,035,353,367,377,377,367,317,000,000,000,000,000,000,200,300 ; 076
+	.byte	017,017,017,007,007,016,017,017,000,000,300,340,340,040,346,316 ; 078
+	.byte	000,000,001,003,003,163,377,377,000,000,000,000,000,000,141,367 ; 080
+	.byte	000,000,000,000,000,000,200,340,000,000,000,000,000,024,101,003 ; 082
+	.byte	000,100,002,040,000,037,017,101,000,000,000,000,014,336,356,356 ; 084
+	.byte	356,164,160,370,370,373,367,017,146,331,276,277,337,347,371,176 ; 086
+	.byte	077,177,177,377,376,352,356,334,077,077,036,037,077,077,077,077 ; 088
+	.byte	234,074,270,270,234,234,316,306,077,037,014,017,017,017,017,007 ; 090
+	.byte	300,300,200,200,000,000,000,000,007,003,007,011,017,037,036,034 ; 092
+	.byte	074,070,070,160,160,160,076,037,000,000,000,001,003,003,003,007 ; 094
+	.byte	007,037,174,370,360,340,340,300,077,176,376,374,370,360,340,300 ; 096
+	.byte	200,000,200,200,200,200,300,300,017,017,017,016,034,074,070,170 ; 098
+	.byte	000,000,000,000,200,200,200,300,076,336,357,347,347,343,343,323 ; 100
+	.byte	160,161,363,363,173,173,173,065,300,300,300,000,000,000,000,000 ; 102
+	.byte	073,375,153,267,114,374,370,370,056,053,027,011,016,017,017,007 ; 104
+	.byte	360,360,360,350,030,370,370,360,007,007,007,011,016,017,027,173 ; 106
+	.byte	320,270,170,370,370,374,174,174,375,376,377,374,360,300,340,140 ; 108
+	.byte	000,003,007,007,007,003,003,001,174,076,076,076,034,054,064,070 ; 110
+	.byte	220,370,170,074,036,016,077,077,170,160,160,340,340,370,370,370 ; 112
+	.byte	000,000,000,000,000,000,140,360,000,000,000,000,000,340,360,360 ; 114
+	.byte	000,000,000,000,000,001,003,003,000,000,000,200,300,340,360,360 ; 116
+	.byte	360,140,300,203,003,003,001,006,000,001,007,077,377,376,370,300 ; 118
+	.byte	220,360,360,370,357,037,377,037,343,127,057,137,267,013,037,077 ; 120
+	.byte	300,000,000,000,000,000,000,000,077,337,336,350,340,200,000,000 ; 122
+	.byte	000,000,003,017,077,177,376,374,156,154,354,334,274,176,371,347 ; 124
+	.byte	176,376,365,343,377,376,175,063,370,360,300,200,000,000,000,000 ; 126
+	.byte	235,175,375,075,316,364,370,340,001,000,001,001,003,017,077,177 ; 128
+	.byte	200,100,360,176,377,377,036,034,171,176,177,177,036,002,000,000 ; 130
+	.byte	074,070,000,000,000,000,000,000,263,115,062,005,171,003,003,003 ; 132
+	.byte	000,000,000,000,000,000,000,074,000,100,156,137,137,137,337,356 ; 134
+	.byte	176,377,377,377,177,077,216,175,177,376,015,355,375,375,376,077 ; 136
+	.byte	000,007,014,013,165,365,365,154,000,000,000,000,000,200,200,200 ; 138
+	.byte	000,000,016,017,007,003,001,001,000,200,200,000,120,120,220,240 ; 140
+	.byte	003,003,003,007,007,016,016,024,300,300,100,200,200,000,000,000 ; 142
+	.byte	001,001,002,007,017,077,176,374,256,137,137,131,177,277,337,356 ; 144
+	.byte	034,034,036,017,017,007,007,003,370,340,340,340,300,000,300,300 ; 146
+	.byte	361,377,377,375,175,143,177,177,001,001,000,000,000,000,000,000 ; 148
+	.byte	300,300,100,340,320,270,274,176,077,077,037,020,037,047,073,075 ; 150
+	.byte	000,000,200,200,300,300,300,300,177,377,177,037,017,003,003,007 ; 152
+	.byte	077,037,037,037,037,037,017,017,200,000,000,000,000,000,000,000 ; 154
+	.byte	007,007,012,034,070,260,260,270,017,017,017,007,005,003,003,003 ; 156
+	.byte	230,000,300,300,300,300,300,300,003,003,002,001,001,001,001,000 ; 158
+	.byte	000,000,000,070,174,374,334,314,000,020,150,234,142,215,067,153 ; 160
+	.byte	350,340,200,200,200,140,360,360,335,275,275,273,173,167,167,167 ; 162
+	.byte	000,001,001,003,003,007,007,013,360,360,140,200,300,300,000,000 ; 164
+	.byte	173,275,336,347,373,055,366,370,035,037,037,037,037,017,000,001 ; 166
+	.byte	340,300,200,200,000,000,000,000,001,001,001,001,000,000,000,000 ; 168
+	.byte	000,000,000,000,000,000,340,370,000,000,000,000,000,000,001,003 ; 170
+	.byte	022,212,345,365,172,235,355,355,366,357,357,377,360,317,277,277 ; 172
+	.byte	003,363,373,035,016,017,005,003,356,034,376,377,067,047,017,016 ; 174
+	.byte	170,167,357,357,357,337,316,300,001,000,000,000,001,001,001,000 ; 176
+	.byte	200,200,200,200,200,000,360,370,001,001,003,007,037,157,264,337 ; 178
+	.byte	000,000,000,000,000,000,003,003,370,370,370,370,270,320,340,340 ; 180
+	.byte	347,173,275,336,356,356,356,336,001,006,017,017,017,017,006,001 ; 182
+	.byte	300,300,200,200,000,000,000,200,335,275,275,275,273,326,354,261 ; 184
+	.byte	001,001,007,027,063,073,077,076,106,071,026,010,000,000,000,000 ; 186
+	.byte	034,000,000,000,000,000,000,000,000,000,000,000,000,000,000,200 ; 188
+	.byte	000,000,000,000,000,000,003,163,000,000,000,000,000,000,160,360 ; 190
+	.byte	200,200,000,000,000,200,300,240,373,367,167,367,356,036,375,375 ; 192
+	.byte	344,354,377,177,070,167,267,267,360,160,270,337,317,300,300,200 ; 194
+	.byte	363,017,377,367,367,157,037,007,271,136,257,247,121,110,000,000 ; 196
+	.byte	000,000,000,200,136,277,377,173,172,274,301,273,070,200,340,340 ; 198
+	.byte	273,273,327,326,356,357,107,040,337,277,277,377,017,000,000,000 ; 200
+	.byte	037,377,377,377,376,360,000,000,000,300,375,277,277,177,007,000 ; 202
+	.byte	014,037,077,177,343,000,000,000,056,030,000,000,000,000,000,000 ; 204
+	.byte	000,000,000,000,000,000,000,340,360,360,220,360,340,200,000,000 ; 206
+	.byte	003,007,077,377,217,353,364,372,000,000,000,000,001,003,003,007 ; 208
+	.byte	010,010,030,374,077,030,020,020,000,102,064,034,070,054,102,000 ; 210
+	.byte	000,000,004,077,377,004,000,000,000,000,004,377,077,004,000,000 ; 212
+	.byte	000,301,066,357,377,374,003,377,372,375,276,237,217,363,074,317 ; 214
+	.byte	017,037,177,377,377,360,377,377,000,000,000,000,001,003,303,073 ; 216
+	.byte	000,000,000,377,377,000,000,000,030,030,030,030,030,030,030,030 ; 218
+	.byte	000,000,030,174,174,070,000,000,000,014,034,076,076,014,000,000 ; 220
+	.byte	006,005,017,034,070,360,240,140,140,240,360,070,034,017,005,006 ; 222
+	.byte	000,000,000,044,176,333,201,000,000,044,146,347,074,030,000,000 ; 224
+	.byte	000,000,000,000,200,300,340,370,370,374,376,377,377,377,377,007 ; 226
+	.byte	007,007,007,003,003,003,003,340,340,340,300,200,000,000,000,347 ; 228
+	.byte	303,303,203,204,007,007,017,003,007,007,017,017,037,177,336,016 ; 230
+	.byte	034,030,030,034,014,000,000,350,360,200,000,000,000,000,000,001 ; 232
+	.byte	007,017,016,014,014,014,016,000,000,000,000,000,000,200,200,360 ; 234
+	.byte	360,370,374,376,377,377,377,007,007,007,007,017,017,017,017,300 ; 236
+	.byte	300,300,300,300,300,100,300,217,017,007,003,001,001,001,000,017 ; 238
+	.byte	017,077,076,176,174,360,140,000,000,000,000,000,000,001,003,340 ; 240
+	.byte	140,140,160,060,070,074,036,200,000,000,000,000,000,000,000,277 ; 242
+	.byte	247,317,233,247,263,010,337,207,277,207,233,267,152,337,223,000 ; 244
+	; 246 tiles = 1968 (03660) bytes 
+
+; reflection table for signed byte
+	.byte	001, 201, 101, 301, 041, 241, 141, 341
+	.byte	021, 221, 121, 321, 061, 261, 161, 361
+	.byte	011, 211, 111, 311, 051, 251, 151, 351
+	.byte	031, 231, 131, 331, 071, 271, 171, 371
+	.byte	005, 205, 105, 305, 045, 245, 145, 345
+	.byte	025, 225, 125, 325, 065, 265, 165, 365
+	.byte	015, 215, 115, 315, 055, 255, 155, 355
+	.byte	035, 235, 135, 335, 075, 275, 175, 375
+	.byte	003, 203, 103, 303, 043, 243, 143, 343
+	.byte	023, 223, 123, 323, 063, 263, 163, 363
+	.byte	013, 213, 113, 313, 053, 253, 153, 353
+	.byte	033, 233, 133, 333, 073, 273, 173, 373
+	.byte	007, 207, 107, 307, 047, 247, 147, 347
+	.byte	027, 227, 127, 327, 067, 267, 167, 367
+	.byte	017, 217, 117, 317, 057, 257, 157, 357
+	.byte	037, 237, 137, 337, 077, 277, 177, 377
+ReflectionTable:
+	.byte	000, 200, 100, 300, 040, 240, 140, 340
+	.byte	020, 220, 120, 320, 060, 260, 160, 360
+	.byte	010, 210, 110, 310, 050, 250, 150, 350
+	.byte	030, 230, 130, 330, 070, 270, 170, 370
+	.byte	004, 204, 104, 304, 044, 244, 144, 344
+	.byte	024, 224, 124, 324, 064, 264, 164, 364
+	.byte	014, 214, 114, 314, 054, 254, 154, 354
+	.byte	034, 234, 134, 334, 074, 274, 174, 374
+	.byte	002, 202, 102, 302, 042, 242, 142, 342
+	.byte	022, 222, 122, 322, 062, 262, 162, 362
+	.byte	012, 212, 112, 312, 052, 252, 152, 352
+	.byte	032, 232, 132, 332, 072, 272, 172, 372
+	.byte	006, 206, 106, 306, 046, 246, 146, 346
+	.byte	026, 226, 126, 326, 066, 266, 166, 366
+	.byte	016, 216, 116, 316, 056, 256, 156, 356
+	.byte	036, 236, 136, 336, 076, 276, 176, 376
+
+; background tiles addrs
+BackTilesTbl:
+	.word	BackTiles+000000, BackTiles+000012, BackTiles+000024, BackTiles+000036, BackTiles+000050, BackTiles+000062, BackTiles+000074, BackTiles+000106
+	.word	BackTiles+000120, BackTiles+000132, BackTiles+000144, BackTiles+000156, BackTiles+000170, BackTiles+000202, BackTiles+000214, BackTiles+000226
+	.word	BackTiles+000240, BackTiles+000252, BackTiles+000264, BackTiles+000276, BackTiles+000310, BackTiles+000322, BackTiles+000334, BackTiles+000346
+	.word	BackTiles+000360, BackTiles+000372, BackTiles+000404, BackTiles+000416, BackTiles+000430, BackTiles+000442, BackTiles+000454, BackTiles+000466
+	.word	BackTiles+000500, BackTiles+000512, BackTiles+000524, BackTiles+000536, BackTiles+000550, BackTiles+000562, BackTiles+000574, BackTiles+000606
+	.word	BackTiles+000620, BackTiles+000632, BackTiles+000644, BackTiles+000656, BackTiles+000670, BackTiles+000702, BackTiles+000714, BackTiles+000726
+	.word	BackTiles+000740, BackTiles+000752, BackTiles+000764, BackTiles+000776, BackTiles+001010, BackTiles+001022, BackTiles+001034, BackTiles+001046
+	.word	BackTiles+001060, BackTiles+001072, BackTiles+001104, BackTiles+001116, BackTiles+001130, BackTiles+001142, BackTiles+001154, BackTiles+001166
+	.word	BackTiles+001200, BackTiles+001212, BackTiles+001224, BackTiles+001236, BackTiles+001250, BackTiles+001262, BackTiles+001274, BackTiles+001306
+	.word	BackTiles+001320, BackTiles+001332, BackTiles+001344, BackTiles+001356, BackTiles+001370, BackTiles+001402, BackTiles+001414, BackTiles+001426
+	.word	BackTiles+001440, BackTiles+001452, BackTiles+001464, BackTiles+001476, BackTiles+001510, BackTiles+001522, BackTiles+001534, BackTiles+001546
+	.word	BackTiles+001560, BackTiles+001572, BackTiles+001604, BackTiles+001616, BackTiles+001630, BackTiles+001642, BackTiles+001654, BackTiles+001666
+	.word	BackTiles+001700, BackTiles+001712, BackTiles+001724, BackTiles+001736, BackTiles+001750, BackTiles+001762, BackTiles+001774, BackTiles+002006
+	.word	BackTiles+002020, BackTiles+002032, BackTiles+002044, BackTiles+002056, BackTiles+002070, BackTiles+002102, BackTiles+002114, BackTiles+002126
+	.word	BackTiles+002140, BackTiles+002152, BackTiles+002164, BackTiles+002176, BackTiles+002210, BackTiles+002222, BackTiles+002234, BackTiles+002246
+	.word	BackTiles+002260, BackTiles+002272, BackTiles+002304, BackTiles+002316, BackTiles+002330, BackTiles+002342, BackTiles+002354, BackTiles+002366
+	.word	BackTiles+002400, BackTiles+002412, BackTiles+002424, BackTiles+002436, BackTiles+002450, BackTiles+002462, BackTiles+002474, BackTiles+002506
+	.word	BackTiles+002520, BackTiles+002532, BackTiles+002544, BackTiles+002556, BackTiles+002570, BackTiles+002602, BackTiles+002614, BackTiles+002626
+	.word	BackTiles+002640, BackTiles+002652, BackTiles+002664, BackTiles+002676, BackTiles+002710, BackTiles+002722, BackTiles+002734, BackTiles+002746
+	.word	BackTiles+002760, BackTiles+002772, BackTiles+003004, BackTiles+003016, BackTiles+003030, BackTiles+003042, BackTiles+003054, BackTiles+003066
+	.word	BackTiles+003100, BackTiles+003112, BackTiles+003124, BackTiles+003136, BackTiles+003150, BackTiles+003162, BackTiles+003174, BackTiles+003206
+	.word	BackTiles+003220, BackTiles+003232, BackTiles+003244, BackTiles+003256, BackTiles+003270, BackTiles+003302, BackTiles+003314, BackTiles+003326
+	.word	BackTiles+003340, BackTiles+003352, BackTiles+003364, BackTiles+003376, BackTiles+003410, BackTiles+003422, BackTiles+003434, BackTiles+003446
+	.word	BackTiles+003460, BackTiles+003472, BackTiles+003504, BackTiles+003516, BackTiles+003530, BackTiles+003542, BackTiles+003554, BackTiles+003566
+	.word	BackTiles+003600, BackTiles+003612, BackTiles+003624, BackTiles+003636, BackTiles+003650, BackTiles+003662, BackTiles+003674, BackTiles+003706
+	.word	BackTiles+003720, BackTiles+003732, BackTiles+003744, BackTiles+003756, BackTiles+003770, BackTiles+004002, BackTiles+004014, BackTiles+004026
+	.word	BackTiles+004040, BackTiles+004052, BackTiles+004064, BackTiles+004076, BackTiles+004110, BackTiles+004122, BackTiles+004134, BackTiles+004146
+	.word	BackTiles+004160, BackTiles+004172, BackTiles+004204, BackTiles+004216, BackTiles+004230, BackTiles+004242, BackTiles+004254, BackTiles+004266
+	.word	BackTiles+004300, BackTiles+004312, BackTiles+004324, BackTiles+004336, BackTiles+004350, BackTiles+004362, BackTiles+004374, BackTiles+004406
+	.word	BackTiles+004420, BackTiles+004432, BackTiles+004444, BackTiles+004456, BackTiles+004470, BackTiles+004502, BackTiles+004514, BackTiles+004526
+	.word	BackTiles+004540, BackTiles+004552, BackTiles+004564, BackTiles+004576, BackTiles+004610, BackTiles+004622, BackTiles+004634, BackTiles+004646
+	.word	BackTiles+004660, BackTiles+004672, BackTiles+004704, BackTiles+004716, BackTiles+004730, BackTiles+004742, BackTiles+004754
+
+; foreground tiles addrs
+ForeTilesTbl:
+	.word	ForeTiles+000000, ForeTiles+000022, ForeTiles+000044, ForeTiles+000066, ForeTiles+000110, ForeTiles+000132, ForeTiles+000154, ForeTiles+000176
+	.word	ForeTiles+000220, ForeTiles+000242, ForeTiles+000264, ForeTiles+000306, ForeTiles+000330, ForeTiles+000352, ForeTiles+000374, ForeTiles+000416
+	.word	ForeTiles+000440, ForeTiles+000462, ForeTiles+000504, ForeTiles+000526, ForeTiles+000550, ForeTiles+000572, ForeTiles+000614, ForeTiles+000636
+	.word	ForeTiles+000660, ForeTiles+000702, ForeTiles+000724, ForeTiles+000746, ForeTiles+000770, ForeTiles+001012, ForeTiles+001034, ForeTiles+001056
+	.word	ForeTiles+001100, ForeTiles+001122, ForeTiles+001144, ForeTiles+001166, ForeTiles+001210, ForeTiles+001232, ForeTiles+001254, ForeTiles+001276
+	.word	ForeTiles+001320, ForeTiles+001342, ForeTiles+001364, ForeTiles+001406, ForeTiles+001430, ForeTiles+001452, ForeTiles+001474, ForeTiles+001516
+	.word	ForeTiles+001540, ForeTiles+001562, ForeTiles+001604, ForeTiles+001626, ForeTiles+001650, ForeTiles+001672, ForeTiles+001714, ForeTiles+001736
+	.word	ForeTiles+001760, ForeTiles+002002, ForeTiles+002024, ForeTiles+002046, ForeTiles+002070, ForeTiles+002112, ForeTiles+002134, ForeTiles+002156
+	.word	ForeTiles+002200, ForeTiles+002222, ForeTiles+002244, ForeTiles+002266, ForeTiles+002310, ForeTiles+002332, ForeTiles+002354, ForeTiles+002376
+	.word	ForeTiles+002420, ForeTiles+002442, ForeTiles+002464, ForeTiles+002506, ForeTiles+002530, ForeTiles+002552, ForeTiles+002574, ForeTiles+002616
+	.word	ForeTiles+002640, ForeTiles+002662, ForeTiles+002704, ForeTiles+002726, ForeTiles+002750, ForeTiles+002772, ForeTiles+003014, ForeTiles+003036
+	.word	ForeTiles+003060, ForeTiles+003102, ForeTiles+003124, ForeTiles+003146, ForeTiles+003170, ForeTiles+003212, ForeTiles+003234, ForeTiles+003256
+	.word	ForeTiles+003300, ForeTiles+003322, ForeTiles+003344, ForeTiles+003366, ForeTiles+003410, ForeTiles+003432, ForeTiles+003454, ForeTiles+003476
+	.word	ForeTiles+003520, ForeTiles+003542, ForeTiles+003564, ForeTiles+003606, ForeTiles+003630, ForeTiles+003652, ForeTiles+003674, ForeTiles+003716
+	.word	ForeTiles+003740, ForeTiles+003762, ForeTiles+004004, ForeTiles+004026, ForeTiles+004050, ForeTiles+004072, ForeTiles+004114, ForeTiles+004136
+	.word	ForeTiles+004160, ForeTiles+004202, ForeTiles+004224, ForeTiles+004246, ForeTiles+004270, ForeTiles+004312, ForeTiles+004334, ForeTiles+004356
+	.word	ForeTiles+004400, ForeTiles+004422, ForeTiles+004444, ForeTiles+004466, ForeTiles+004510, ForeTiles+004532, ForeTiles+004554, ForeTiles+004576
+	.word	ForeTiles+004620, ForeTiles+004642, ForeTiles+004664, ForeTiles+004706, ForeTiles+004730, ForeTiles+004752
+
+; screen tile index to screen vaddr
+Index2Vaddr:
+	.word	104000, 104002, 104004, 104006, 104010, 104012, 104014, 104016
+	.word	104020, 104022, 104024, 104026, 104030, 104032, 104034, 104036
+	.word	104040, 104042, 104044, 104046, 104050, 104052, 104054, 104056
+	.word	104060, 104062, 104064, 104066, 104070, 104072, 104074, 104076
+	.word	105000, 105002, 105004, 105006, 105010, 105012, 105014, 105016
+	.word	105020, 105022, 105024, 105026, 105030, 105032, 105034, 105036
+	.word	105040, 105042, 105044, 105046, 105050, 105052, 105054, 105056
+	.word	105060, 105062, 105064, 105066, 105070, 105072, 105074, 105076
+	.word	106000, 106002, 106004, 106006, 106010, 106012, 106014, 106016
+	.word	106020, 106022, 106024, 106026, 106030, 106032, 106034, 106036
+	.word	106040, 106042, 106044, 106046, 106050, 106052, 106054, 106056
+	.word	106060, 106062, 106064, 106066, 106070, 106072, 106074, 106076
+	.word	107000, 107002, 107004, 107006, 107010, 107012, 107014, 107016
+	.word	107020, 107022, 107024, 107026, 107030, 107032, 107034, 107036
+	.word	107040, 107042, 107044, 107046, 107050, 107052, 107054, 107056
+	.word	107060, 107062, 107064, 107066, 107070, 107072, 107074, 107076
+	.word	110000, 110002, 110004, 110006, 110010, 110012, 110014, 110016
+	.word	110020, 110022, 110024, 110026, 110030, 110032, 110034, 110036
+	.word	110040, 110042, 110044, 110046, 110050, 110052, 110054, 110056
+	.word	110060, 110062, 110064, 110066, 110070, 110072, 110074, 110076
+	.word	111000, 111002, 111004, 111006, 111010, 111012, 111014, 111016
+	.word	111020, 111022, 111024, 111026, 111030, 111032, 111034, 111036
+	.word	111040, 111042, 111044, 111046, 111050, 111052, 111054, 111056
+	.word	111060, 111062, 111064, 111066, 111070, 111072, 111074, 111076
+	.word	112000, 112002, 112004, 112006, 112010, 112012, 112014, 112016
+	.word	112020, 112022, 112024, 112026, 112030, 112032, 112034, 112036
+	.word	112040, 112042, 112044, 112046, 112050, 112052, 112054, 112056
+	.word	112060, 112062, 112064, 112066, 112070, 112072, 112074, 112076
+	.word	113000, 113002, 113004, 113006, 113010, 113012, 113014, 113016
+	.word	113020, 113022, 113024, 113026, 113030, 113032, 113034, 113036
+	.word	113040, 113042, 113044, 113046, 113050, 113052, 113054, 113056
+	.word	113060, 113062, 113064, 113066, 113070, 113072, 113074, 113076
+	.word	114000, 114002, 114004, 114006, 114010, 114012, 114014, 114016
+	.word	114020, 114022, 114024, 114026, 114030, 114032, 114034, 114036
+	.word	114040, 114042, 114044, 114046, 114050, 114052, 114054, 114056
+	.word	114060, 114062, 114064, 114066, 114070, 114072, 114074, 114076
+	.word	115000, 115002, 115004, 115006, 115010, 115012, 115014, 115016
+	.word	115020, 115022, 115024, 115026, 115030, 115032, 115034, 115036
+	.word	115040, 115042, 115044, 115046, 115050, 115052, 115054, 115056
+	.word	115060, 115062, 115064, 115066, 115070, 115072, 115074, 115076
+	.word	116000, 116002, 116004, 116006, 116010, 116012, 116014, 116016
+	.word	116020, 116022, 116024, 116026, 116030, 116032, 116034, 116036
+	.word	116040, 116042, 116044, 116046, 116050, 116052, 116054, 116056
+	.word	116060, 116062, 116064, 116066, 116070, 116072, 116074, 116076
+	.word	117000, 117002, 117004, 117006, 117010, 117012, 117014, 117016
+	.word	117020, 117022, 117024, 117026, 117030, 117032, 117034, 117036
+	.word	117040, 117042, 117044, 117046, 117050, 117052, 117054, 117056
+	.word	117060, 117062, 117064, 117066, 117070, 117072, 117074, 117076
+	.word	120000, 120002, 120004, 120006, 120010, 120012, 120014, 120016
+	.word	120020, 120022, 120024, 120026, 120030, 120032, 120034, 120036
+	.word	120040, 120042, 120044, 120046, 120050, 120052, 120054, 120056
+	.word	120060, 120062, 120064, 120066, 120070, 120072, 120074, 120076
+	.word	121000, 121002, 121004, 121006, 121010, 121012, 121014, 121016
+	.word	121020, 121022, 121024, 121026, 121030, 121032, 121034, 121036
+	.word	121040, 121042, 121044, 121046, 121050, 121052, 121054, 121056
+	.word	121060, 121062, 121064, 121066, 121070, 121072, 121074, 121076
+	.word	122000, 122002, 122004, 122006, 122010, 122012, 122014, 122016
+	.word	122020, 122022, 122024, 122026, 122030, 122032, 122034, 122036
+	.word	122040, 122042, 122044, 122046, 122050, 122052, 122054, 122056
+	.word	122060, 122062, 122064, 122066, 122070, 122072, 122074, 122076
+	.word	123000, 123002, 123004, 123006, 123010, 123012, 123014, 123016
+	.word	123020, 123022, 123024, 123026, 123030, 123032, 123034, 123036
+	.word	123040, 123042, 123044, 123046, 123050, 123052, 123054, 123056
+	.word	123060, 123062, 123064, 123066, 123070, 123072, 123074, 123076
+	.word	124000, 124002, 124004, 124006, 124010, 124012, 124014, 124016
+	.word	124020, 124022, 124024, 124026, 124030, 124032, 124034, 124036
+	.word	124040, 124042, 124044, 124046, 124050, 124052, 124054, 124056
+	.word	124060, 124062, 124064, 124066, 124070, 124072, 124074, 124076
+	.word	125000, 125002, 125004, 125006, 125010, 125012, 125014, 125016
+	.word	125020, 125022, 125024, 125026, 125030, 125032, 125034, 125036
+	.word	125040, 125042, 125044, 125046, 125050, 125052, 125054, 125056
+	.word	125060, 125062, 125064, 125066, 125070, 125072, 125074, 125076
+
+
+; tile screens 32x18 = 576. bytes
+; 124324
+BuffD:	.blkb	1100			; BUFFD - Contact tile screen address
+; 125424
+BuffB:	.blkb	1100			; BUFFB - Back tile screen address
+; 126524
+BuffO:	.blkb	1100			; BUFFO - Front tile screen address
+; 127624
+BuffN:	.blkb	1100			; BUFFN - Ninja tile screen address
+; 130724
+BuffG1:	.blkb	1100			; BUFFG1 - Enemy 0 tile screen address
+; 132024
+BuffG2:	.blkb	1100			; BUFFG2 - Enemy 1 tile screen address
+
+; 043310 magic number addition replacement
+CBuffsDiffA =: BuffD - 61014
+
+EndOfCpu = .
+
+	.END	S2CPU

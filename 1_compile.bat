@@ -22,9 +22,11 @@ rem -- put to disk --
 ..\scripts\bkdecmd d ./release/andos.img sabot2 >NUL
 ..\scripts\bkdecmd d ./release/andos.img sabot2.ov1 >NUL
 ..\scripts\bkdecmd d ./release/andos.img sabot2.ov2 >NUL
+..\scripts\bkdecmd d ./release/andos.img sabot2.ov7 >NUL
 ..\scripts\bkdecmd a ./release/andos.img ./release/sabot2.bin >NUL
 ..\scripts\bkdecmd a ./release/andos.img ./release/sabot2.ov1 >NUL
 ..\scripts\bkdecmd a ./release/andos.img ./release/sabot2.ov2 >NUL
+..\scripts\bkdecmd a ./release/andos.img ./release/sabot2.ov7 >NUL
 
 rem -- run bkemu --
 echo.

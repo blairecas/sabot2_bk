@@ -73,5 +73,6 @@ function ImgWriteData ($fn, $cstr, $ispack, $tdx, $tdy)
     $f = fopen(pathinfo(__FILE__, PATHINFO_DIRNAME)."/../graphics/graphics.mac", "w");
 
     ImgWriteData("panel.png", "ImgPanel", true/*pack*/, -1, -1);
+    ImgWriteData("title.png", "ImgTitle", true/*pack*/, -1, -1);
 
     fclose($f); 

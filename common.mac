@@ -56,6 +56,7 @@ C_RAM_BANKS45 =: ^B0100100100000000
 C_RAM_BANKS52 =: ^B0001101000000000
 C_RAM_BANKS54 =: ^B0001110000000000
 C_RAM_BANKS56 =: ^B0001111100000000
+C_RAM_BANKS62 =: ^B0111101000000000
 
 
 ; some macroses
@@ -66,20 +67,5 @@ C_RAM_BANKS56 =: ^B0001111100000000
 
 	.macro	pop	RR
 	mov	(SP)+, RR
-	.endm
-
-	.macro	nop1
-	nop
-	.endm
-
-	.macro	nop2
-	nop
-	nop
-	.endm
-
-	.macro	nop3
-	nop
-	nop
-	nop
 	.endm
 

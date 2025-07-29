@@ -1,7 +1,7 @@
 <?php
 	$f = fopen('s2tilf.txt', 'r');
 	$g = fopen('s2tilf_out.txt', 'w');
-    $img = imagecreate(1024, 1024);
+    $img = imagecreate(256, 256);
     $dot0_color = imagecolorallocate($img, 0, 0, 0);
     $dot1_color = imagecolorallocate($img, 255, 255, 255);
 
@@ -19,9 +19,9 @@ function setDots ($b)
     }
     $cur_y++;
     if (($cur_y%8)==0) {
-        $cur_y = 0;
+        $cur_y = $cur_y-8;
         $cur_x += 8;
-        if ($cur_x >= 1024) {
+        if ($cur_x >= 256) {
             $cur_x = 0;
             $cur_y += 8;
         }

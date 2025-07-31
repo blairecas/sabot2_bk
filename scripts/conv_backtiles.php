@@ -34,8 +34,8 @@ function setDots ($b)
 }
 
 
-    $f = fopen("backs.mac", "r");
-    $g = fopen("backs_out.mac", "w");
+    $f = fopen("backs_zxattr.mac", "r");
+    $g = fopen("backs_bkattr.mac", "w");
 
     $k = 0;
     while (!feof($f))
@@ -68,5 +68,5 @@ function setDots ($b)
     fclose($f);
     fclose($g);
     
-    imagepng($img, "fbacks.png");
+    imagepng($img, "back_tiles.png");
 ?>

@@ -8,7 +8,7 @@ if %ERRORLEVEL% NEQ 0 ( exit /b )
 if %ERRORLEVEL% NEQ 0 ( exit /b )
 php -f ..\scripts\lst2bin.php _%NAME%.lst _%NAME%.bin bin 1000
 if %ERRORLEVEL% NEQ 0 ( exit /b )
-php -f scripts\makeovls.php _%NAME%.bin
+php -f scripts\make_ovls.php _%NAME%.bin
 if %ERRORLEVEL% NEQ 0 ( exit /b )
 rem --- clean ---
 del _%NAME%.mac

@@ -1,6 +1,6 @@
 <?php
-	$f = fopen('s2tilf.txt', 'r');
-	$g = fopen('s2tilf_out.txt', 'w');
+    $f = fopen('fore_zxattr.mac', 'r');
+    $g = fopen('fore_bkattr.mac', 'w');
     $img = imagecreate(256, 256);
     $dot0_color = imagecolorallocate($img, 0, 0, 0);
     $dot1_color = imagecolorallocate($img, 255, 255, 255);
@@ -33,34 +33,34 @@ function setDots ($b)
 
     $kkk = 0;
     while (!feof($f))
-	{
-		$s = fgets($f);
-		$s = trim($s);
-		if (strlen($s) == 0) continue;
-		$arr1 = explode(".BYTE", $s);
-		$arr3 = explode(',', $arr1[1]);
-		if (count($arr3) !== 16) { echo "error in $s\n"; exit(1); }
+    {
+        $s = fgets($f);
+        $s = trim($s);
+        if (strlen($s) == 0) continue;
+        $arr1 = explode(".BYTE", $s);
+        $arr3 = explode(',', $arr1[1]);
+        if (count($arr3) !== 16) { echo "error in $s\n"; exit(1); }
         // swap mask and data bytes to make words
         fputs($g, "\t.word\t");
-		for ($i=0; $i<16; $i+=4) {
-			$bm1 = intval(trim($arr3[$i+0]), 8);
-			$bm2 = intval(trim($arr3[$i+2]), 8);
+        for ($i=0; $i<16; $i+=4) {
+            $bm1 = intval(trim($arr3[$i+0]), 8);
+            $bm2 = intval(trim($arr3[$i+2]), 8);
             $wm = $bm1 + ($bm2 << 8);
-			$b1 = intval(trim($arr3[$i+1]), 8);
-			$b2 = intval(trim($arr3[$i+3]), 8);
+            $b1 = intval(trim($arr3[$i+1]), 8);
+            $b2 = intval(trim($arr3[$i+3]), 8);
             setDots($b1);
             setDots($b2);
             $w = $b1 + ($b2 << 8);
-			fputs($g, str_pad(decoct($wm), 6, '0', STR_PAD_LEFT) . ",");
-			fputs($g, str_pad(decoct($w), 6, '0', STR_PAD_LEFT) . ", ");
-		}
+            fputs($g, str_pad(decoct($wm), 6, '0', STR_PAD_LEFT) . ",");
+            fputs($g, str_pad(decoct($w), 6, '0', STR_PAD_LEFT) . ", ");
+        }
         // attr byte -> word
-		$s = fgets($f);
-		$s = trim($s);
-		if (strlen($s) == 0) { echo "error in attr byte: $s\n"; exit(1); }
-		$arr1 = explode(".BYTE", $s);
-		$arr3 = explode(',', $arr1[1]);
-		if (count($arr3) !== 1) { echo "error in $s\n"; exit(1); }
+        $s = fgets($f);
+        $s = trim($s);
+        if (strlen($s) == 0) { echo "error in attr byte: $s\n"; exit(1); }
+        $arr1 = explode(".BYTE", $s);
+        $arr3 = explode(',', $arr1[1]);
+        if (count($arr3) !== 1) { echo "error in $s\n"; exit(1); }
 
         $zx_attr = intval(trim($arr3[0]), 8);
         $ink = $zx_attr & 0b111;
@@ -69,9 +69,9 @@ function setDots ($b)
 
         fputs($g, str_pad(decoct($bk_attr), 6, '0', STR_PAD_LEFT) . " ; " . str_pad(decoct($kkk), 3, '0', STR_PAD_LEFT) . "\n");
         $kkk++;
-	}
-	fclose($f);
-	fclose($g);
+    }
+    fclose($f);
+    fclose($g);
 
-    imagepng($img, "ftiles.png");
+    imagepng($img, "fore_tiles.png");
 ?>

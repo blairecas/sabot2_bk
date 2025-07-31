@@ -131,7 +131,8 @@ Timer3:		.word	0
 
 BackupVals:	.blkw	5
 
-JoyPrev:	.word	0
+JoyCur:		.byte	0
+JoyUsed:	.byte	0
 PpuKeys:	.word	0
 FramesCount:	.word	0
 
@@ -393,6 +394,8 @@ PrepareBank3:
 ; main keys interrupt
 KeyInt:	mov	R0, -(SP)
 	mov	@#177662, R0
+	tstb	JoyUsed				; do not use keyboard if we already used joystick
+	bne	90$
 	cmp	R0, #C_KEY_LEFT
 	bne	10$
 	bis	#P_KEY_LEFT, PpuKeys
@@ -429,10 +432,11 @@ VsyCnt:	.word	0
 	mov	R0, -(SP)
 	; set keys from joystick
 	mov	@#177714, R0
-	cmpb	R0, JoyPrev
+	cmpb	R0, JoyCur
 	beq	10$
-	movb	R0, JoyPrev
-	movb	R0, PpuKeys
+	movb	R0, JoyCur
+	bisb	R0, PpuKeys
+	movb	#1, JoyUsed
 10$:	; check for 10-sec
 	cmp	VsyCnt, #500.
 	blo	VsyRti
@@ -692,9 +696,10 @@ DrawEnergy:
 	mov	EnergyFrac(R1), R0		; red/black stripe
 	mov	#1, R1				; only one column
 	call	DrawEnergyCol
+	inc	(SP)				; increase as if it was integer part
 20$:	; draw black part if needed
 	mov	(SP)+, R1
-	sub	#13., R1
+	sub	#14., R1
 	neg	R1
 	ble	99$
 	clr	R0
@@ -759,13 +764,15 @@ EnergyUp:
 ; BuffD bytes: 2 (draw) -> 1 (still draw) -> 0 (do not draw)
 
 DrawScreen:
-	; unpress keys here
-	bit	#100, @#177716			; any key pressed?
-	beq	10$				; yes
-	tst	JoyPrev				; any joy pressed?
-	bne	10$				; yes
+	; process keys related here
+	tstb	JoyUsed
+	beq	10$
+	movb	JoyCur, PpuKeys
+	br	20$
+10$:	bit	#100, @#177716			; any key pressed?
+	beq	20$				; yes
 	clr	PpuKeys				; else clear keys variable
-10$:	; draw then
+20$:	; draw then
 	inc	FramesCount
 	clr	NinaOnFire
 	clr	NinaCanShock
@@ -1026,26 +1033,10 @@ DrawNear:
 	mov	#5, R1
 10$:	bicb	#^B10000000, (R3)+
 	sob	R1, 10$				; repeat
-	call	XorNear				; invert NEAR sign
 	call	L10300				; increase money for stash searched?
 	clr	R0
 20$:	mov	#32, R3				; X shift to draw item (near)
 	br	DrawItem			; draw NEAR item
-
-; invert 4-char NEAR sign
-XorNear:
-	mov	#176.*C_SCRWID+54.+C_VADDR, R3
-	mov	#8., R1
-	mov	#177777, R0
-	mov	#C_RAM_BANKS35, @#177716
-10$:	xor	R0, (R3)+
-	xor	R0, (R3)+
-	xor	R0, (R3)+
-	xor	R0, (R3)+
-	add	#C_SCRWID-8., R3
-	sob	R1, 10$				; repeat
-	mov	#C_RAM_BANKS12, @#177716
-	return
 
 ; draw HELD item
 DrawHeld:
@@ -1415,8 +1406,8 @@ CoreStart:
 	movb	#377, K17200			; use bike
 	movb	#1, K11770			; fence is on
 	movb	#356, K31220+2			; room with fence type
-	MOVB	#21, K60610			; lift panel up
-	CLRB	K60677				; lift variable 'up'
+	movb	#21, K60610			; lift panel position
+	clrb	K60677				; lift variable 'up' (0-up, 377-down)
 
 	; prepare stashes
 	mov	#33., R5			; 33. records
@@ -2075,7 +2066,7 @@ K16324:	; we will NOT hide ladder - let users know about room below
 
 ; Room marker $1D 035 - ??? 3x3 tiles
 ; infinite energy room - treasure chest
-K16350:	CLRB	<Decen+2>			; clear (DECEN+1)
+K16350:	CLRB	Decen+2				; clear (DECEN+1) - infinite energy
 	MOV	#K16306, R4			; copy from
 	MOVB	#3, K01604			; width = 3
 	MOV	#3, R1				; height = 3
@@ -4524,8 +4515,7 @@ K51216:	MOVB	K23750, R0			; get TEMPN
 	BPL	K51300
 	BIC	#177600, R0			; 0..177
 	PUSH	R0
-K51246:	call	XorNear
-	MOV	#K50764, R3			; "STASH SEARCHED"
+K51246:	MOV	#K50764, R3			; "STASH SEARCHED"
 	MOV	#16, R1				; 14. string length
 	MOV	#050146, R2			; screen coords
 	CALL	PrintStr			; PRINT string "STASH SEARCHED"
@@ -4642,16 +4632,15 @@ K52024:	JMP	K25276
 ; KIK2P: ??? - Vector for (VECTN+1)
 K52030:	JMP	K55262				; => SETST
 
-K52034:	.WORD	1				; ENTIM timer
 
 ; RESTP procedure
-K52036:	MOV	#K52034, R3			; ENTIM addr
-	DECB	(R3)				; decr ENTIM
-	BNE	99$				; NZ => RETURN
-	MOVB	#2, (R3)			; set ENTIM = 2
-	; energy up at resting
-	call	EnergyUp
-99$:	return
+K52036:	dec	(PC)+
+	.word	2
+	ble	10$
+	return
+10$:	mov	#2, K52036+2			; to slow down energy increase
+	jmp	EnergyUp
+
 
 ; STANP: Ninja standing - Vector for (VECTN+1)
 K52120:	CALL	K52036				; RESTP

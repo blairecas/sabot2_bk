@@ -69,7 +69,7 @@ function writeTileSet ( $mirror )
 }
 
     // create RAM bank 7
-    $g = fopen(pathinfo(__FILE__, PATHINFO_DIRNAME)."/../release/sabot2.ov7", "w");
+    $g = fopen(pathinfo(__FILE__, PATHINFO_DIRNAME)."/../release/sabot2.ov6", "w");
     $gsize = 0;
 
     //////////////////////////////////////////////////////////////////

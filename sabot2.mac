@@ -133,6 +133,7 @@ BackupVals:	.blkw	5
 
 JoyCur:		.byte	0
 JoyUsed:	.byte	0
+
 PpuKeys:	.word	0
 FramesCount:	.word	0
 
@@ -768,10 +769,13 @@ DrawScreen:
 	tstb	JoyUsed
 	beq	10$
 	movb	JoyCur, PpuKeys
+	bit	#P_KEY_FIRE, JoyCur
+	beq	18$
 	br	20$
 10$:	bit	#100, @#177716			; any key pressed?
 	beq	20$				; yes
 	clr	PpuKeys				; else clear keys variable
+18$:	clr	UseTerminal+2			; allow use terminal after 'all buttons up'
 20$:	; draw then
 	inc	FramesCount
 	clr	NinaOnFire
@@ -828,12 +832,6 @@ TBufGuard1:
 	incb	R1
 	beq	TBufGuard2
 	movb	GuardTilesAttr(R1), TOvClr	; add guard 1 tiles color attribute
-;	asl	R1
-;	asl	R1
-;	asl	R1
-;	add	#GuardTiles-8., R1
-;	movb	Guard1Dir, TOvDir
-;	call	TileOver
 	mov	#C_RAM_BANKS16, @#177716
 	mov	#TileBuf, R2
 	asl	R1
@@ -859,12 +857,6 @@ TBufGuard2:
 	bisb	BuffG2-BuffD(R5), R1
 	incb	R1
 	beq	TBufNina
-;	asl	R1
-;	asl	R1
-;	asl	R1
-;	add	#GuardTiles-8., R1
-;	movb	Guard2Dir, TOvDir
-;	call	TileOver
 	mov	#C_RAM_BANKS16, @#177716
 	mov	#TileBuf, R2
 	asl	R1
@@ -891,12 +883,6 @@ TBufNina:
 	beq	TBufFore
 	add	TOvClr, NinaOnFire		; if were flamethrower - add it 
 	add	NinaCanShock, NinaOnFire	; if on electric fence - add it too
-;	asl	R1
-;	asl	R1
-;	asl	R1
-;	add	#NinaTiles-8., R1
-;	movb	K36264, TOvDir			; set Nina DIR
-;	call	TileOver
 	mov	#C_RAM_BANKS16, @#177716
 	mov	#TileBuf, R2
 	asl	R1
@@ -969,7 +955,6 @@ TBufOut:
 	inc	(PC)+
 TilesCount:	.word	0
 ;	; DEBUG
-;	bit	#1, FramesCount
 ;	beq	99$
 ;	mov	R5, R1
 ;	sub	#BuffD, R1
@@ -1106,7 +1091,6 @@ Sound2:
 
 ; sound 'console use'
 SoundConsole:
-	bic	#P_KEY_FIRE, PpuKeys			; remove 'fire' button
 	return
 
 
@@ -1388,6 +1372,7 @@ CoreStart:
 	clr	R1
 	call	Pt3Init
 	clr	PpuKeys
+	clrb	JoyUsed
 10$:	clr	VsyCnt
 	call	Pt3Play
 	tst	VsyCnt
@@ -1453,7 +1438,7 @@ CoreStart:
 	MOVB	#7, K36211			; set MAND = 7.
 	MOVB	#46, K36210			; set MANA = 38.
 	MOV	#406, K36212			; set MANPS
-	MOVB	#21, K36215			; set RMAC room position = 17.
+	MOVB	#21, RoomX			; set RMAC room position = 17.
 	MOV	#050205, K51142			; where to print tapes, set PTSPS
 	CLR	R0
 	CLRB	K24762
@@ -1462,7 +1447,7 @@ CoreStart:
 	CLRB	K17716				; clear BIKMR
 	CLRB	K36216				; clear ELECU
 	CLRB	K33540				; clear DEAD
-	CLRB	K36214				; RMDN = 0 top level
+	CLRB	RoomY				; RMDN = 0 top level
 	MOV	#K23030+4, K23746		; INITSTA address -> NERST
 	MOV	#K46310, K36276+2		; Nina gliding addr, GLINC address -> CHARN+1
 	MOV	#K40520, K25272+2		; GLIDERP address -> VECTN+1
@@ -1500,7 +1485,7 @@ InitRoom:
 	MOVB	K17200, R0			; get BIKER
 	INCB	R0
 	BNE	10$
-	CMPB	K36214, #23			; check if RMDN == 19.
+	CMPB	RoomY, #23			; check if RMDN == 19.
 	BNE	10$
 	MOV	#K17716, R3			; BIKMR
 	TSTB	(R3)
@@ -1516,7 +1501,7 @@ InitRoom:
 20$:	CLRB	(R3)				; <
 	ADD	R2, R3				; | next record
 	SOB	R1, 20$				; repeat
-	MOVB	K36215, R1			; get RMAC room position
+	MOVB	RoomX, R1			; get RMAC room position
 	MOVB	#1, R0
 	DECB	R1
 	BNE	K13230				; RMAC == 1 ? no => JIRRT
@@ -1550,7 +1535,7 @@ K13230:	MOVB	R0, K70340			; set DRFNQ
 MakeRoom:
 RoomAddr =: .+2
 	MOV	#000000, R3			; room type !!MUT-ARG!!
-	MOVB	K36214, R0			; get RMDN room level
+	MOVB	RoomY, R0			; get RMDN room level
 	BEQ	K13346				; top level =>
 ; RMDN != 0
 	MOVB	(R3), R0			; get room number
@@ -1717,7 +1702,7 @@ K14712:	MOV	#62164, R3			; BUFFB+40.
 K14720:	MOV	#62177, R3			; BUFFB+51.
 
 ; WINDR:
-K14724:	CMPB	K36214, #14			; RMDN compare to 12.
+K14724:	CMPB	RoomY, #14			; RMDN compare to 12.
 	BLO	K14740				; less than 12.
 	JMP	K16466				; >= 12. => NWUKL
 K14740:	MOV	#K14346, R4			; copy from
@@ -1907,7 +1892,7 @@ K15472:	MOV	#62503, R3			; BUFFB+247.
 	BR	K15402
 
 ; Room marker $2E 056 - " LEVEL X " sign
-K15500:	MOVB	K36214, K01602			; RMDN room level
+K15500:	MOVB	RoomY, K01602			; RMDN room level
 	MOV	#134, R0			; 92.
 	SUB	K01602, R0
 	MOVB	R0, K15550+7			; put digit in " LEVEL X " string
@@ -2518,9 +2503,9 @@ K24272:	MOV	#K24352, <K13422+2>		; set return point = RETRX
 	MOV	#K24170, R4			; SPARES table address
 	MOV	#32, R1				; 26.
 ; SPART:
-K24310:	CMPB	K36214, (R4)			; <  check RMDN
+K24310:	CMPB	RoomY, (R4)			; <  check RMDN
 	BNE	K24360				; => SPARW
-	CMPB	K36215, 1(R4)			; check RMAC
+	CMPB	RoomX, 1(R4)			; check RMAC
 	BNE	K24360				; => SPARW
 	CLR	R0
 	BISB	2(R4), R0			; get byte +002
@@ -2538,7 +2523,7 @@ K24352:	POP	R3
 K24360:	ADD	#3, R4				; next record
 	SOB	R1, K24310			; repeat
 	MOV	#K13414, K13422+2		; BAKWD
-	CMPB	K36214, #37			; RMDN == 31. ?
+	CMPB	RoomY, #37			; RMDN == 31. ?
 	BNE	K24436				; no => NWATR
 ; Room level = 31. = lower level with water
 	MOV	#400, R1			; 256.
@@ -2556,9 +2541,9 @@ K24430:	DEC	R3
 K24436:	MOV	#K23030, R4			; NROBT address - Stashes
 	MOV	#41, R1				; 33. records
 ; NROBL:
-K24446:	CMPB	K36214, (R4)			; <  == RMDN room level
+K24446:	CMPB	RoomY, (R4)			; <  == RMDN room level
 	BNE	K24556				; no => NNOOS
-	CMPB	K36215, 1(R4)			; == RMAC ?
+	CMPB	RoomX, 1(R4)			; == RMAC ?
 	BNE	K24556				; no => NNOOS
 	MOVB	2(R4), K01610
 	MOVB	3(R4), K01611
@@ -2599,21 +2584,22 @@ LiftSigns:
 	MOV	#6, R1				; 6.
 	MOV	#K26660, R2			; " LIFT "
 	mov	#BuffO+108., R3
-	CALL	PrintOnBgr			; BUFOM - Draw string as tiles
+	call	PrintOnBgr			; BUFOM - Draw string as tiles
 20$:	; end put lift signs
 
 	jmp	MainCycle
 	
 ; PLATR procedure
-K24712:	MOV	K24746, R3			; PLAPS
-	MOV	#000004, R1			; 4.
-K24722:	MOVB	(R2)+, (R3)+			; <
-	SOB	R1, K24722			; repeat
-	SUB	#001100, R3
-	MOV	#000004, R1
-K24736:	MOVB	#001, -(R3)			; <
-	SOB	R1, K24736			; repeat
-	RETURN
+;K24712:	MOV	K24746, R3			; PLAPS
+;	MOV	#000004, R1			; 4.
+;K24722:	MOVB	(R2)+, (R3)+			; <
+;	SOB	R1, K24722			; repeat
+;	SUB	#001100, R3
+;	MOV	#000004, R1
+;K24736:	MOVB	#001, -(R3)			; <
+;	SOB	R1, K24736			; repeat
+;	RETURN
+
 ;
 K24746:	.BYTE	041, 255			; PLAPS
 K24750:	.BYTE	000				; PLADI
@@ -2670,7 +2656,7 @@ K25040:	; flamethrower ends
 
 K25216:	; fill Nina's ManBf (not on top rooms, we are just gliding there)
 	call	PrepManBf
-	tstb	K36214				; check RMDN room level
+	tstb	RoomY				; check RMDN room level
 	beq	10$				; 0 (top)
 	call	K36220				; MANAR (fill MANBF)
 10$:	call	PrepDraBuf
@@ -2740,12 +2726,12 @@ K25556:	CALL	K36072				; G1DI2
 	ADD	#3, R3
 	MOV	R3, K47720
 	MOV	R3, K55316
-	MOVB	K36214, R1			; get RMDN room level
+	MOVB	RoomY, R1			; get RMDN room level
 	MOVB	(R4), R0
 	BIC	#177600, R0
 	CMPB	R0, R1
 	BNE	K25646
-	CMPB	K36215, 2(R4)			; check RMAC
+	CMPB	RoomX, 2(R4)			; check RMAC
 	BNE	K25646				; => NDRGA
 	;
 	CALL	PrepManBf
@@ -2754,7 +2740,7 @@ K25556:	CALL	K36072				; G1DI2
 	;
 
 ; NDRGA:
-K25646:	MOVB	K36214, R1			; get RMDN room level
+K25646:	MOVB	RoomY, R1			; get RMDN room level
 	MOVB	(R4), R0
 	BIC	#177600, R0
 	SUB	R1, R0
@@ -2762,7 +2748,7 @@ K25646:	MOVB	K36214, R1			; get RMDN room level
 	CMPB	R0, #6
 	BLO	K25700
 	JMP	K30606
-K25700:	MOVB	K36215, R0			; get RMAC
+K25700:	MOVB	RoomX, R0			; get RMAC
 	CLR	R5
 	BISB	2(R4), R5
 	SUB	R5, R0
@@ -2848,13 +2834,13 @@ K26264:	MOV	R3, K01610
 	MOVB	K01611, 4(R4)
 	MOVB	R1, 1(R4)
 ; NWALK:
-K26310:	MOVB	K36214, R1			; get RMDN room level
+K26310:	MOVB	RoomY, R1			; get RMDN room level
 	MOVB	(R4), R0
 	BIC	#177600, R0
 	CMPB	R0, R1
 	BEQ	K26332
 	JMP	K30606
-K26332:	CMPB	K36215, 2(R4)			; check RMAC
+K26332:	CMPB	RoomX, 2(R4)			; check RMAC
 	BEQ	K26346
 	JMP	K30606
 K26346:	;
@@ -3241,7 +3227,8 @@ K30540:	MOV	#7, R1
 	MOVB	R0, K01607
 	MOVB	1(R4), R0
 	CALL	DrawObject			; Guard DRWOB (BuffG1 2?)
-	CALL	K36112				; GRDAR
+; ??? TODO WHAT IS THIS ???
+;	CALL	K36112				; GRDAR
 	BR	K30756				; => NDRGB
 
 K30604:	.WORD	6				; ??
@@ -3350,7 +3337,7 @@ K31324:	MOVB	L15646, R0			; get RMTIME
 	JMP	K31712				; => MISGO
 
 ; NJSTN:
-K31344:	CMPB	K36214, #37			; RMDN == 31. $1F ?
+K31344:	CMPB	RoomY, #37			; RMDN == 31. $1F ?
 	BNE	K31360
 	JMP	K31712				; => MISGO
 
@@ -3549,7 +3536,7 @@ K32436:	ADD	#7, R4
 	DECB	R0
 	BEQ	K32456
 	JMP	K31722
-K32456:	TSTB	K36214				; check RMDN room level
+K32456:	TSTB	RoomY				; check RMDN room level
 	BNE	K32542				; not 0 (top) =>
 
 ; we're on the top room level
@@ -3608,7 +3595,7 @@ K32650:	MOVB	R0, 1(R4)
 	sob	R1, 20$
 	add	#34, R4
 	add	#34, R3
-	SOB	R5, 10$
+	sob	R5, 10$
 
 ; coloring terminals
 SetTermColor:
@@ -3677,8 +3664,6 @@ K33114:
 ;	CMPB	K33540, #2			; DEAD == 2 ?
 ;	BEQ	K33270
 
-; Update TIMER counter
-; а не пошел бы этот таймер знаете-ли
 K33124:
 	; DEBUG
 	; 1) 6500 1400
@@ -3697,7 +3682,6 @@ K33124:
 ;	mov	#100020, R5
 ;	call	PrintOctal
 ;	mov	#C_RAM_BANKS12, @#177716
-
 
 	jmp	MainCycle
 
@@ -3746,8 +3730,6 @@ K33424:	CMPB	#37, 2(R4)			; X == 31. ?
 	MOV	#1, R2				; 1
 	BR	K33312				; => MOVOJ
 
-
-K33446:	.ASCII	/TIME IS SHORT /		; TODO: remove
 
 K33464:	.BYTE	1				; HELD value
 K33465:	.BYTE	0				; NEAR value
@@ -3818,10 +3800,8 @@ K36210:	.BYTE	10.				; MANA ??
 K36211:	.BYTE	10.				; MAND ??
 K36212:	.BYTE	112				; MANPS ??
 K36213:	.BYTE	001
-RoomY:
-K36214:	.BYTE	0				; RMDN - room level, 0=top, 31.=water
-RoomX:
-K36215:	.BYTE	0				; RMAC - room position 0=left, 31.=right
+RoomY:	.byte	0				; RMDN - room level, 0=top, 31.=water
+RoomX:	.byte	0				; RMAC - room position 0=left, 31.=right
 K36216:	.BYTE	0				; ELECU ??
 	.EVEN
 
@@ -4115,8 +4095,8 @@ K37656:	JMP	K25276				; => ENDVC
 K37662:	.WORD	0				; SPEED
 
 ; TPORT: Teleport to room (30.,24.)
-K37664:	MOVB	#36, K36215			; set RMAC = 30. room position
-	MOVB	#30, K36214			; set RMDN = 24. room level
+K37664:	MOVB	#36, RoomX			; set RMAC = 30. room position
+	MOVB	#30, RoomY			; set RMDN = 24. room level
 	MOVB	#5, K36211			; set MAND = 5
 	MOVB	#4, K36210			; set MANA = 4
 	MOV	#244, K36212			; set MANPS = 164.
@@ -4127,7 +4107,7 @@ K37742:	jmp	InitRoom			; => INISC
 K37746:	MOV	RoomAddr, R3			; get RM+1
 	CMPB	(R3), #101			; room type == $41 ?
 	BEQ	K37664				; yes => TPORT teleport
-	INCB	K36215				; incr RMAC - one room right
+	INCB	RoomX				; incr RMAC - one room right
 	MOVB	#375, K36210			; set MANA = 253.
 	MOV	K36212, R3			; get MANPS
 	SUB	#40, R3
@@ -4135,7 +4115,7 @@ K37746:	MOV	RoomAddr, R3			; get RM+1
 	JMP	K54262				; => PIGGS
 
 ; LEFSC: go one room left
-K40012:	DECB	K36215				; decr RMAC - one room left
+K40012:	DECB	RoomX				; decr RMAC - one room left
 	MOVB	#35, K36210			; set MANA = 29.
 	MOV	K36212, R3			; get MANPS
 	ADD	#40, R3				; +32.
@@ -4265,7 +4245,7 @@ K40726:	MOVB	K36211, R0			; get MAND
 	CMPB	R0, #371			; == 249. ?
 	BEQ	K40742
 	RETURN
-K40742:	DECB	K36214				; decr RMDN room level
+K40742:	DECB	RoomY				; decr RMDN room level
 	POP	R3
 	ADD	#22, R0				; + 18.
 	MOVB	R0, K36211			; set MAND
@@ -4671,11 +4651,17 @@ K52230:	MOVB	ManBf+24, R0			; get (MANBF+20.)
 K52244:	MOV	K36212, R3			; get MANPS
 	add	#BuffO+98., R3
 	CMPB	(R3), #212			; == 138. ?
-	BEQ	K52266
+	beq	UseTerminal
 	JMP	K52772				; no terminal no => NCONU
 
 ; Console: check for LIFTSWAP or FENSWAP or CODEROP
-K52266:	call	SoundConsole
+; we need to stop changing console until all buttons up
+UseTerminal:
+	tst	#000000
+	beq	10$
+	jmp	K25276
+10$:	inc	UseTerminal+2
+	call	SoundConsole
 	MOV	RoomAddr, R3			; get (RM+1)
 	CMPB	(R3), #075			; room type == $3D ?
 	BEQ	K52446				; yes => K2DAQ
@@ -5003,7 +4989,7 @@ K54212:	MOVB	K36211, R0
 	CMPB	R0, #13				; == 11. ?
 	BEQ	K54226
 	RETURN
-K54226:	MOV	#K36214, R3			; RMDN addr
+K54226:	MOV	#RoomY, R3			; RMDN addr
 	INCB	(R3)				; down one level
 	POP	R3
 	SUB	#21, R0

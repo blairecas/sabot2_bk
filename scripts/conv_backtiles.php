@@ -6,7 +6,7 @@
 
     $arr_repl = Array(0=>0, 1=>1, 2=>3, 3=>3, 4=>2, 5=>1, 6=>3, 7=>2);
 
-    $img = imagecreate(256, 256);
+    $img = imagecreate(128, 128);
     $dot0_color = imagecolorallocate($img, 0, 0, 0);
     $dot1_color = imagecolorallocate($img, 255, 255, 255);
 
@@ -26,7 +26,7 @@ function setDots ($b)
     if (($cur_y%8)==0) {
         $cur_y = $cur_y-8;
         $cur_x += 8;
-        if ($cur_x >= 256) {
+        if ($cur_x >= 128) {
             $cur_x = 0;
             $cur_y += 8;
         }

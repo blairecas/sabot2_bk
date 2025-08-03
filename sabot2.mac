@@ -12,18 +12,18 @@
 
 START:	mov	#1000, SP
 
-	; DEBUG setup timer
-	mov	#177777, @#177706
-	mov	#20, @#177712
-	; DEBUG
-
 	; test for BK0011M
 	cmpb	@#177717, #300
 	beq	10$
 	mov	#MsgEr0, R0
 	br	GameError
 
-10$:	; hello kitty
+10$:	; DEBUG setup timer
+	mov	#177777, @#177706
+	mov	#20, @#177712
+	; DEBUG
+
+	; hello kitty
 	mov	#MsgLoa, R0
 	call	PrintEmt
 	; load bank 1
@@ -33,7 +33,6 @@ START:	mov	#1000, SP
 	mov	#C_RAM_BANKS24, @#177716
 	incb	OvlFnm+9.
 	call	LoadOver
-
 	; load bank 6
 	mov	#C_RAM_BANKS64, @#177716
 	movb	#'6, OvlFnm+9.
@@ -1322,6 +1321,118 @@ K55464:	.word	6				; temp vars in drawing
 K50062:	.word	6
 
 
+; at last - ROCKET LAUNCH (!!!)
+RocketLaunch:
+	inc	(PC)+				; set launched flag
+RocketLaunched:	.word	0
+	; 
+	mov	#C_RAM_BANKS15, @#177716
+	; shake screen before
+	mov	#12000, ShakeScrDelay
+	mov	#8., R4
+10$:	call	ShakeScreen
+	sob	R4, 10$
+	; fly it
+	mov	#10000, ShakeScrDelay
+	mov	#RocketTiles, R5
+	mov	#48., R4
+20$:	call	ShakeScreen
+	call	RocketScroll
+	sub	#100, ShakeScrDelay
+	sob	R4, 20$
+	mov	#C_RAM_BANKS12, @#177716
+	; shake screen after
+	mov	#1000, ShakeScrDelay
+	mov	#8., R4
+30$:	call	ShakeScreen
+	sob	R4, 30$
+	return
+
+; shake screen
+ShakeScreen:
+	mov	#4, R1
+20$:	call	Random
+	bic	#^B1111111111111000, R0
+	add	#1330-4, R0
+	mov	R0, @#177664
+ShakeScrDelay =: .+2
+	mov	#10000, R0
+	sob	R0, .
+	sob	R1, 20$
+	mov	#1330, @#177664
+	return
+
+RocketScroll:
+	mov	#C_VADDR+24., R0
+	mov	#C_SCRWID*8.+C_VADDR+24., R1
+	mov	#144.-8., R3
+20$:	mov	#11., R2
+30$:	mov	(R1)+, (R0)+
+	sob	R2, 30$
+	add	#64.-22., R0
+	add	#64.-22., R1
+	sob	R3, 20$
+	; put new tiles lines
+	mov	#11., R2
+40$:	cmp	R5, #RocketTilesEnd
+	blo	42$
+	mov	#RocketTile000, R1
+	br	44$
+42$:	movb	(R5)+, R1
+	asl	R1
+	mov	RocketTilesAddr(R1), R1
+44$:	mov	#8., R3
+50$:	mov	(R1)+, (R0)
+	add	#C_SCRWID, R0
+	sob	R3, 50$
+	sub	#C_SCRWID*8.-2, R0
+	sob	R2, 40$
+	return
+
+RocketTiles:
+	.byte	0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0	; 0
+	.byte	0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0	; 1
+	.byte	0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0	; 2
+	.byte	0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0 ; 3
+	.byte	0, 2, 1, 1, 1, 3, 1, 1, 1, 4, 0 ; 4
+	.byte	2, 3, 1, 1, 1, 3, 1, 1, 1, 3, 4 ; 5
+	.byte	3, 3, 1, 1, 1, 3, 1, 1, 1, 3, 3 ; 6
+	.byte	3, 3, 1, 1, 1, 3, 1, 1, 1, 3, 3 ; 7
+	.byte	3, 3, 1, 1, 1, 3, 1, 1, 1, 3, 3 ; 8
+	.byte	3, 3, 1, 1, 1, 3, 1, 1, 1, 3, 3 ; 9
+	.byte	3, 5, 1, 1, 1, 3, 1, 1, 1, 6, 3 ; 10
+	.byte	5, 0, 1, 1, 7, 3, 7, 1, 1, 0, 6 ; 11
+	.byte	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ; 12
+	.byte	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ; 13
+	.byte	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ; 14 
+	.byte	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ; 15
+RocketTilesEnd:
+	.even
+
+RocketTile000:
+	.word	100000, 105250, 105210, 105210, 104010, 105250, 100000, 125252
+RocketTile001:
+	.word	125252, 125252, 125252, 125252, 125252, 125252, 125252, 125252
+RocketTile002:
+	.word	160000, 175250, 177210, 177610, 177750, 177770, 177776, 177777
+RocketTile003:
+	.word	177777, 177777, 177777, 177777, 177777, 177777, 177777, 177777
+RocketTile004:
+	.word	100013, 105257, 105277, 105377, 105777, 127777, 137777, 177777
+RocketTile005:
+	.word	177777, 137777, 127777, 105777, 105377, 105277, 100057, 125253
+RocketTile006:
+	.word	177777, 177776, 177770, 177750, 177610, 177250, 174000, 165252
+RocketTile007:
+	.word	0, 0, 0, 0, 0, 0, 0, 0
+
+RocketTilesAddr:
+	.word	RocketTile000, RocketTile001, RocketTile002, RocketTile003
+	.word	RocketTile004, RocketTile005, RocketTile006, RocketTile007
+
+
+
+
 ; //////////////////////////////////////////////////////////////////////////////
 ; // START
 ; //////////////////////////////////////////////////////////////////////////////
@@ -1336,7 +1447,7 @@ wTitle:	.word	0
 	beq	CoreStart
 	call	FadeScreen
 	mov	#BackupVals, R0
-	mov	(R0)+, @#004			; save to be replaced interrupt vectors
+	mov	(R0)+, @#004
 	mov	(R0)+, @#060
 	mov	(R0)+, @#274 
 	mov	(R0)+, @#100 
@@ -1388,11 +1499,14 @@ CoreStart:
 
 	; init some vars
 	movb	#14., K52626			; tapes needed
+; DEBUG
+;	movb	#1, K52626			; tapes needed
 	movb	#377, K17200			; use bike
 	movb	#1, K11770			; fence is on
 	movb	#356, K31220+2			; room with fence type
 	movb	#21, K60610			; lift panel position
 	clrb	K60677				; lift variable 'up' (0-up, 377-down)
+	clr	RocketLaunched			; rocket back to stage
 
 	; prepare stashes
 	mov	#33., R5			; 33. records
@@ -2564,9 +2678,6 @@ K24530:	SUB	#1100, R3			; <BUFFB-BUFFO>
 ; NNOOS:
 K24556:	ADD	#16, R4				; + 14. to next record
 	SOB	R1, K24446			; repeat => NROBL
-	CALL	DrawScreen			; DOPIC - Show the room on the screen
-	; rocket text printing on screen 'colonel briggsy..' whatsoever
-	; removed by me, looks awfull
 
 ; put lift sign if we are in the room with it
 LiftSigns:
@@ -2587,8 +2698,75 @@ LiftSigns:
 	call	PrintOnBgr			; BUFOM - Draw string as tiles
 20$:	; end put lift signs
 
-	jmp	MainCycle
-	
+; remove rocket if we already launched it
+; rocket rooms are 4 (3 with rocket and one top lid room)
+RemoveRocket:
+	tst	RocketLaunched
+	beq	90$
+	movb	@RoomAddr, R0
+	cmpb	R0, #013			; room 0 - top lid room
+	bne	10$
+	mov	#Rocket0Replace, R0
+	br	ReplaceBuffB
+10$:	cmpb	R0, #003			; room 1 - upper rocket part
+	bne	20$
+	mov	#Rocket1Replace, R0
+	br	ReplaceBuffB
+20$:	cmpb	R0, #075			; room 2 - middle rocket part
+	bne	30$
+	mov	#Rocket2Replace, R0
+	br	ReplaceBuffB
+30$:	cmpb	R0, #076			; room 3 - bottom rocket part
+	bne	90$
+	mov	#Rocket3Replace, R0
+	br	ReplaceBuffB
+90$:	jmp	InitRoomFin
+
+ReplaceBuffB:
+	movb	(R0)+, R1			; X
+	beq	InitRoomFin
+	movb	(R0)+, R2			; Y
+	swab	R2
+	asr	R2
+	asr	R2
+	asr	R2				; Y * 32.
+	add	R1, R2				; index
+	add 	#BuffB, R2			; R2 = addr in BuffB
+	movb	(R0)+, R3			; DY
+10$:	mov	R2, -(SP)
+	movb	(R0), R1			; DX
+20$:	movb	1(R0), (R2)+
+	sob	R1, 20$
+	mov	(SP)+, R2
+	add	#32., R2
+	sob	R3, 10$
+	inc	R0
+	inc	R0
+	br	ReplaceBuffB
+
+; room initialize is finished, draw it on screen
+;
+InitRoomFin:
+	call	DrawScreen
+	br	MainCycle
+
+
+Rocket0Replace:
+	.byte	11., 16., 01., 13., 1		; X Y DY DX tile#
+	.byte	0
+Rocket1Replace:
+	.byte	11., 00., 18., 13., 0
+	.byte	0
+Rocket2Replace:
+	.byte	10., 00., 18., 15., 0
+	.byte	0
+Rocket3Replace:
+	.byte	12., 00., 12., 11., 0
+	.byte	09., 05., 10., 01., 0
+	; .byte	25., 05., 10., 01., 0		; it's better with right wall
+	.byte	0
+	.even
+
 ; PLATR procedure
 ;K24712:	MOV	K24746, R3			; PLAPS
 ;	MOV	#000004, R1			; 4.
@@ -3598,22 +3776,27 @@ K32650:	MOVB	R0, 1(R4)
 	sob	R5, 10$
 
 ; coloring terminals
+; TODO: nah, make it better?
 SetTermColor:
 	mov	K36212, R3			; get MANPS
 	add	#BuffO+98., R3
 	movb	#^B01000, R0			; blue background
 	cmpb	(R3), #212			; is we at terminal
-	bne	10$
+	bne	20$
 	mov	#^B11000, R0			; red background
 	; set BuffD with terminal as 'was changed'
-	; terminals are fixed at X=17., Y=10. (4 tiles)
+	; terminals are fixed at X=17., Y=10. (4 tiles) (lift and fence)
+	; rocket launch terminal is at X=4., Y=11. 
 	mov	#2, R1
 	mov	#10.*32.+17.+BuffD, R2
+	cmpb	@RoomAddr, #075			; are we in the rocket launch room?
+	bne	10$
+	mov	#11.*32.+4.+BuffD, R2
+10$:	movb	R1, (R2)+
 	movb	R1, (R2)+
 	movb	R1, (R2)+
 	movb	R1, (R2)+
-	movb	R1, (R2)+
-10$:	; set color attrs for terminal tiles
+20$:	; set color attrs for terminal tiles
 	mov	R0, K46013
 	mov	R0, K46034
 	mov	R0, K46055
@@ -4702,7 +4885,13 @@ K52402:	MOVB	K13224+2, R0			; get (DRFNT+1)
 	BR	K52362				; => BUTCR
 
 ; K2DAQ: Console, room type == $3D - room left to rocket
-K52446:	MOV	#050146, R2			; screen coords
+; rocket launch 
+K52446:	; was it already launched?
+	tst	RocketLaunched
+	beq	10$
+	jmp	K25276
+	; 
+10$:	MOV	#050146, R2			; screen coords
 	MOV	#16, R1				; 14. string length
 	MOV	#K51145, R3			; TAPCT addr
 	MOVB	K51146, R0			; get TAPTT
@@ -4725,6 +4914,8 @@ K52504:	MOVB	K51146, R0			; get TAPTT
 K52526:	MOVB	K51145, K51146			; copy TAPCT -> TAPTT
 	MOV	#K52646, R3			; "CODE ACCEPTED"
 	CALL	PrintStr			; PRINT string
+	; (!) LAUNCH IT (!)
+	call	RocketLaunch
 
 ; ERACD:
 ; erase codes from screen

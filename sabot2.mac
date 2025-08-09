@@ -1322,91 +1322,170 @@ K50062:	.word	6
 
 
 ; at last - ROCKET LAUNCH (!!!)
+;
 RocketLaunch:
 	inc	(PC)+				; set launched flag
 RocketLaunched:	.word	0
-	; 
 	mov	#C_RAM_BANKS15, @#177716
-	; shake screen before
-	mov	#12000, ShakeScrDelay
-	mov	#8., R4
-10$:	call	ShakeScreen
-	sob	R4, 10$
-	; fly it
-	mov	#10000, ShakeScrDelay
+	mov	#60, Random+2			; init rand seed for better shaking
+	mov	#12.*8.+144.*C_SCRWID+C_VADDR+24., RocketFlame+2
 	mov	#RocketTiles, R5
-	mov	#48., R4
-20$:	call	ShakeScreen
+RocketCycleAddr =: .+4
+	mov	#RocketCycle-1, #000000
+10$:	call	ShakeScreen
+	inc	RocketCycleAddr
 	call	RocketScroll
-	sub	#100, ShakeScrDelay
-	sob	R4, 20$
-	mov	#C_RAM_BANKS12, @#177716
-	; shake screen after
-	mov	#1000, ShakeScrDelay
-	mov	#8., R4
-30$:	call	ShakeScreen
-	sob	R4, 30$
+	bpl	10$				; (!) set it in previous call (!)
+	mov	#1330, @#177664			; return screen scroll to normal
+	mov	#C_RAM_BANKS12, @#177716	; RAM banks to normal
 	return
 
-; shake screen
+; shaking screen a bit with random
 ShakeScreen:
-	mov	#4, R1
-20$:	call	Random
+	mov	R0, -(SP)
+	call	Random
+	cmp	RocketCycleAddr, #RCLessShake
+	bhis	20$
 	bic	#^B1111111111111000, R0
 	add	#1330-4, R0
-	mov	R0, @#177664
-ShakeScrDelay =: .+2
-	mov	#10000, R0
-	sob	R0, .
-	sob	R1, 20$
-	mov	#1330, @#177664
+10$:	mov	R0, @#177664
+	mov	(SP)+, R0
 	return
+20$:	bic	#^B1111111111111100, R0
+	add	#1330-2, R0
+	br	10$
 
+; actual scroll
+; (!) return with N flag set - ends launch (!)
 RocketScroll:
 	mov	#C_VADDR+24., R0
-	mov	#C_SCRWID*8.+C_VADDR+24., R1
+	mov	R0, R1
+	tstb	@RocketCycleAddr		; are we really scrolling?
+	beq	10$				; no
+	bmi	99$				; finish scroll completely
+	add	#C_SCRWID*8., R1
+	sub	#8.*C_SCRWID, RocketFlame+2
+10$:	; scroll block up
 	mov	#144.-8., R3
 20$:	mov	#11., R2
 30$:	mov	(R1)+, (R0)+
 	sob	R2, 30$
 	add	#64.-22., R0
 	add	#64.-22., R1
-	sob	R3, 20$
-	; put new tiles lines
+	; also shake screen halfway drawing for more frequent shaking
+	cmp	R3, #72.
+	bne	32$
+	call	ShakeScreen
+32$:	sob	R3, 20$
+	; put new tiles lines	
+	tstb	@RocketCycleAddr		; are we really scrolling?
+	beq	99$				; no
+	; change flame tiles
+	clr	42$+2
+	cmp	R5, #RocketTilesCh
+	blo	36$
+	bit	#1, RocketCycleAddr		; first or second flame?
+	beq	36$
+	mov	#RocketTiles2-RocketTilesCh, 42$+2
+36$:	; draw tiles line
 	mov	#11., R2
-40$:	cmp	R5, #RocketTilesEnd
-	blo	42$
-	mov	#RocketTile000, R1
-	br	44$
-42$:	movb	(R5)+, R1
+40$:	clr	R1				; green L tile by default
+	cmp	R5, #RocketTilesEnd		; overscroll?
+	bhis	44$				; yes
+42$:	movb	000000(R5), R1
+	inc	R5
+44$:	call	RocketDrTile
+	sob	R2, 40$
+	call	RocketFlame
+	cln
+99$:	return
+
+; draw one rocket tile, advance R0
+; R1 - #, R0 - vaddr
+RocketDrTile:
+	cmp	R0, #C_VADDR+24.		; out of screen?
+	blo	100$				; yes - don't draw
+	cmp	R0, #144.*C_SCRWID+C_VADDR
+	bhis	100$
 	asl	R1
 	mov	RocketTilesAddr(R1), R1
-44$:	mov	#8., R3
+	mov	#4., R3
 50$:	mov	(R1)+, (R0)
+	add	#C_SCRWID, R0
+	mov	(R1)+, (R0)
 	add	#C_SCRWID, R0
 	sob	R3, 50$
 	sub	#C_SCRWID*8.-2, R0
-	sob	R2, 40$
+	return
+100$:	add	#2, R0
 	return
 
-RocketTiles:
-	.byte	0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0	; 0
-	.byte	0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0	; 1
-	.byte	0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0	; 2
-	.byte	0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0 ; 3
-	.byte	0, 2, 1, 1, 1, 3, 1, 1, 1, 4, 0 ; 4
-	.byte	2, 3, 1, 1, 1, 3, 1, 1, 1, 3, 4 ; 5
-	.byte	3, 3, 1, 1, 1, 3, 1, 1, 1, 3, 3 ; 6
-	.byte	3, 3, 1, 1, 1, 3, 1, 1, 1, 3, 3 ; 7
-	.byte	3, 3, 1, 1, 1, 3, 1, 1, 1, 3, 3 ; 8
-	.byte	3, 3, 1, 1, 1, 3, 1, 1, 1, 3, 3 ; 9
-	.byte	3, 5, 1, 1, 1, 3, 1, 1, 1, 6, 3 ; 10
-	.byte	5, 0, 1, 1, 7, 3, 7, 1, 1, 0, 6 ; 11
-	.byte	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ; 12
-	.byte	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ; 13
-	.byte	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ; 14 
-	.byte	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ; 15
+; redraw flame tiles
+RocketFlame:
+	mov	#12.*8.+144.*C_SCRWID+C_VADDR+24., R0
+	mov	#RocketTilesCh, R4
+	bit	#1, RocketCycleAddr
+	beq	10$
+	mov	#RocketTiles2, R4
+10$:	mov	#11., R2
+20$:	movb	(R4)+, R1
+	bmi	99$
+	call	RocketDrTile
+	sob	R2, 20$
+	add	#8.*C_SCRWID-22., R0
+	br	10$
+99$:	return
+
+RocketCycle: 
+	.byte	0, 0, 0, 0, 0, 0, 0, 0 ; 0 - do not move, <0 - end, else move rocket
+	.byte	0, 0, 0, 0, 0, 0, 0, 0
+	.byte	0, 0, 0, 1, 0, 0, 0, 1
+	.byte	0, 0, 0, 1, 0, 0, 0, 1
+	.byte	0, 0, 1, 0, 0, 1, 0, 0
+	.byte	1, 0, 1, 0, 1, 0, 1, 0
+	.byte	1, 0, 1, 0, 1, 0, 1, 1
+	.byte	1, 1, 1, 1, 1, 1, 1, 1
+	.byte	1, 1, 1, 1, 1, 1, 1, 1
+RCLessShake: ; shake screen less after that point
+	.byte	1, 1, 1, 1, 1, 1, 1, 1
+	.byte	1, 1, 1, 1, 1, 1, 1, 1
+	.byte	1, 1, 1, 1, 1, 1, 1, 1
+	.byte	1, 1, 1, 1, 1, 1, 1, 1
+	.byte	377
+	.even
+
+RocketTiles:	; main rocket body tiles
+	.byte	0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0
+	.byte	0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0
+	.byte	0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0
+	.byte	0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0
+	.byte	0, 2, 1, 1, 1, 3, 1, 1, 1, 4, 0
+	.byte	2, 3, 1, 1, 1, 3, 1, 1, 1, 3, 4
+	.byte	3, 3, 1, 1, 1, 3, 1, 1, 1, 3, 3
+	.byte	3, 3, 1, 1, 1, 3, 1, 1, 1, 3, 3
+	.byte	3, 3, 1, 1, 1, 3, 1, 1, 1, 3, 3
+	.byte	3, 3, 1, 1, 1, 3, 1, 1, 1, 3, 3
+	.byte	3, 5, 1, 1, 1, 3, 1, 1, 1, 6, 3
+	.byte	5, 0, 1, 1, 7, 3, 7, 1, 1, 0, 6
+RocketTilesCh:	; first flame tiles (66. bytes)
+	.byte	0, 0, 10, 11, 12, 13, 14, 15, 16, 0, 0
+	.byte	0, 0, 17, 20, 21, 3, 22, 23, 24, 0, 0
+	.byte	0, 0, 25, 26, 27, 3, 30, 31, 32, 0, 0
+	.byte	0, 0, 0, 33, 34, 3, 35, 36, 37, 0, 0
+	.byte	0, 0, 0, 0, 40, 3, 41, 42, 0, 0, 0
+	.byte	0, 0, 0, 0, 43, 44, 45, 0, 0, 0, 0
 RocketTilesEnd:
+	.byte	377 ; end of flame tiles marker
+	.even
+
+RocketTiles2:	; second flame tiles
+	.byte	0, 0, 46, 47, 50, 13, 51, 52, 53, 0, 0
+	.byte	0, 0, 54, 3, 55, 3, 56, 3, 57, 0, 0
+	.byte	0, 0, 60, 3, 61, 3, 62, 3, 63, 0, 0
+	.byte	0, 0, 64, 65, 66, 3, 67, 70, 71, 0, 0
+	.byte	0, 0, 72, 73, 0, 74, 0, 75, 76, 0, 0
+	.byte	0, 0, 0, 77, 100, 101, 37, 102, 37, 0, 0
+	.byte	377 ; end of flame tiles marker
 	.even
 
 RocketTile000:
@@ -1425,10 +1504,134 @@ RocketTile006:
 	.word	177777, 177776, 177770, 177750, 177610, 177250, 174000, 165252
 RocketTile007:
 	.word	0, 0, 0, 0, 0, 0, 0, 0
+RocketTile008:
+	.word	100000, 105250, 105210, 105210, 134010, 105250, 130000, 125252
+RocketTile009:
+	.word	101252, 105376, 105376, 105376, 105777, 105777, 105777, 125777
+RocketTile010:
+	.word	125400, 177650, 177670, 177670, 177670, 177650, 177660, 177652
+RocketTile011:
+	.word	125252, 177777, 177777, 177777, 177777, 177777, 177777, 177777
+RocketTile012:
+	.word	100352, 105377, 105377, 105377, 104377, 105377, 100377, 125377
+RocketTile013:
+	.word	125260, 137650, 137670, 137610, 137610, 137650, 177640, 177752
+RocketTile014:
+	.word	100003, 105253, 105212, 105212, 104012, 105252, 100016, 125252
+RocketTile015:
+	.word	166000, 165250, 165210, 165210, 164010, 165250, 166000, 165252
+RocketTile016:
+	.word	127777, 127777, 127777, 127777, 127777, 127777, 127777, 127777
+RocketTile017:
+	.word	177600, 177650, 177710, 177710, 177710, 177750, 177700, 177752
+RocketTile018:
+	.word	101377, 105377, 105777, 105777, 105777, 105777, 105777, 125777
+RocketTile019:
+	.word	177754, 177750, 177770, 177773, 177770, 177773, 177770, 177772
+RocketTile020:
+	.word	100012, 105252, 105273, 105213, 104073, 105253, 100013, 125253
+RocketTile021:
+	.word	130000, 105250, 135210, 105210, 134010, 105250, 100000, 125252
+RocketTile022:
+	.word	125777, 135777, 105777, 105777, 105777, 105376, 107376, 125376
+RocketTile023:
+	.word	177700, 177750, 177750, 177750, 177750, 177753, 177743, 177653
+RocketTile024:
+	.word	105777, 105777, 105777, 105777, 105777, 105777, 105377, 125377
+RocketTile025:
+	.word	177750, 177750, 177750, 137750, 137650, 137650, 137660, 127652
+RocketTile026:
+	.word	100012, 105252, 105212, 105212, 104013, 105250, 100003, 125252
+RocketTile027:
+	.word	101376, 105272, 105273, 105270, 105650, 105250, 100314, 125252
+RocketTile028:
+	.word	177643, 177653, 177670, 177610, 177610, 177650, 177300, 177252
+RocketTile029:
+	.word	105377, 105377, 107377, 105377, 105377, 105377, 101677, 125277
+RocketTile030:
+	.word	127600, 127250, 127210, 127210, 127310, 127250, 125000, 125252
+RocketTile031:
+	.word	100003, 105250, 105210, 105210, 104010, 105250, 100000, 125252
+RocketTile032:
+	.word	177314, 177250, 175210, 175210, 175410, 165250, 166000, 125252
+RocketTile033:
+	.word	131677, 105277, 105217, 105217, 104317, 105253, 100073, 125252
+RocketTile034:
+	.word	131400, 105250, 105210, 105210, 104010, 105250, 100000, 125252
+RocketTile035:
+	.word	130000, 135250, 105210, 105210, 104010, 105250, 100000, 125252
+RocketTile036:
+	.word	177777, 177777, 137776, 137776, 147773, 147773, 135754, 125752
+RocketTile037:
+	.word	100014, 105254, 105210, 105210, 104010, 105250, 100000, 125252
+RocketTile038:
+	.word	130000, 125250, 165210, 165210, 165410, 165250, 166000, 165252
+RocketTile039:
+	.word	125252, 137777, 137777, 177777, 177777, 177777, 177777, 177777
+RocketTile040:
+	.word	125403, 165253, 165272, 165272, 165472, 175252, 175416, 175252
+RocketTile041:
+	.word	140072, 145253, 107253, 107253, 106353, 105257, 130357, 125257
+RocketTile042:
+	.word	125252, 177776, 177776, 177777, 177777, 177777, 177777, 177777
+RocketTile043:
+	.word	100016, 105252, 105213, 105213, 104313, 105253, 100073, 125253
+RocketTile044:
+	.word	165400, 175250, 175210, 175210, 175410, 175250, 175400, 175252
+RocketTile045:
+	.word	175316, 177253, 177273, 177273, 177273, 177253, 177273, 177253
+RocketTile046:
+	.word	121657, 165277, 167277, 167277, 167277, 165277, 167277, 165277
+RocketTile047:
+	.word	100353, 105257, 105257, 105257, 104357, 105257, 100357, 125257
+RocketTile048:
+	.word	175400, 175250, 175210, 175210, 175410, 175250, 165400, 165252
+RocketTile049:
+	.word	177273, 177253, 177273, 177273, 177372, 177252, 177316, 175252
+RocketTile050:
+	.word	167277, 165277, 167277, 167277, 127677, 125277, 121677, 125257
+RocketTile051:
+	.word	100357, 105257, 105257, 105257, 104357, 105257, 100353, 125253
+RocketTile052:
+	.word	166000, 165250, 165210, 125210, 124010, 125250, 130000, 125252
+RocketTile053:
+	.word	177777, 177777, 177777, 137777, 137777, 137776, 127776, 127776
+RocketTile054:
+	.word	175416, 175252, 175212, 165212, 165413, 165250, 126000, 125252
+RocketTile055:
+	.word	130357, 105257, 105257, 105253, 144353, 105253, 100072, 125252
+RocketTile056:
+	.word	177777, 177777, 177777, 177776, 177776, 137776, 137772, 137772
+RocketTile057:
+	.word	100073, 105253, 105213, 105212, 104012, 105252, 100016, 125252
+RocketTile058:
+	.word	131400, 105250, 105210, 105210, 105410, 105250, 100000, 125252
+RocketTile059:
+	.word	127776, 127776, 125772, 135772, 135773, 135773, 125356, 125252
+RocketTile060:
+	.word	177777, 137776, 137776, 127772, 127772, 167773, 165753, 125752
+RocketTile061:
+	.word	137770, 137770, 127750, 127754, 167754, 167754, 135670, 125652
+RocketTile062:
+	.word	100014, 105250, 105210, 105210, 104010, 105250, 100000, 125252
+RocketTile063:
+	.word	131403, 105250, 105270, 135210, 104370, 105250, 100000, 125252
+RocketTile064:
+	.word	130003, 105250, 105213, 105210, 104010, 135250, 100000, 125252
+RocketTile065:
+	.word	100060, 135250, 105213, 105210, 105710, 135250, 100302, 125252
+RocketTile066:
+	.word	100060, 105250, 105270, 105270, 104310, 105250, 101700, 125252
+
 
 RocketTilesAddr:
-	.word	RocketTile000, RocketTile001, RocketTile002, RocketTile003
-	.word	RocketTile004, RocketTile005, RocketTile006, RocketTile007
+	.word	RocketTile000, RocketTile001, RocketTile002, RocketTile003, RocketTile004, RocketTile005, RocketTile006, RocketTile007, RocketTile008, RocketTile009
+	.word	RocketTile010, RocketTile011, RocketTile012, RocketTile013, RocketTile014, RocketTile015, RocketTile016, RocketTile017, RocketTile018, RocketTile019
+	.word	RocketTile020, RocketTile021, RocketTile022, RocketTile023, RocketTile024, RocketTile025, RocketTile026, RocketTile027, RocketTile028, RocketTile029
+	.word	RocketTile030, RocketTile031, RocketTile032, RocketTile033, RocketTile034, RocketTile035, RocketTile036, RocketTile037, RocketTile038, RocketTile039
+	.word	RocketTile040, RocketTile041, RocketTile042, RocketTile043, RocketTile044, RocketTile045, RocketTile046, RocketTile047, RocketTile048, RocketTile049
+	.word	RocketTile050, RocketTile051, RocketTile052, RocketTile053, RocketTile054, RocketTile055, RocketTile056, RocketTile057, RocketTile058, RocketTile059
+	.word	RocketTile060, RocketTile061, RocketTile062, RocketTile063, RocketTile064, RocketTile065, RocketTile066
 
 
 
@@ -1492,15 +1695,22 @@ CoreStart:
 	beq	10$
 	clr	PpuKeys
 	call	Pt3Mute
+
+; DEBUG
+;	call	RocketLaunch
+;	tstb	PpuKeys
+;	beq	.-4
+;	br	CoreStart
+
 	call	FadeScreen
 	clr	wTitle
 	; prepare conversion tables byte+attrs -> color word
 	call	PrepareBank3
 
 	; init some vars
-	movb	#14., K52626			; tapes needed
 ; DEBUG
-;	movb	#1, K52626			; tapes needed
+	movb	#1, K52626			; tapes needed
+;	movb	#14., K52626			; tapes needed
 	movb	#377, K17200			; use bike
 	movb	#1, K11770			; fence is on
 	movb	#356, K31220+2			; room with fence type
@@ -1549,9 +1759,9 @@ CoreStart:
 	mov	#14.*8., Energy
 	call	DrawEnergy
 
-	MOVB	#7, K36211			; set MAND = 7.
-	MOVB	#46, K36210			; set MANA = 38.
-	MOV	#406, K36212			; set MANPS
+	MOVB	#7., K36211			; set MAND = 7.
+	MOVB	#38., K36210			; set MANA = 38.
+	MOV	#7.*32.+38., K36212		; set MANPS
 	MOVB	#21, RoomX			; set RMAC room position = 17.
 	MOV	#050205, K51142			; where to print tapes, set PTSPS
 	CLR	R0
@@ -1570,8 +1780,8 @@ CoreStart:
 	MOV	#K70632-15., RoomAddr		; MAP-15 address -> RM+1
 	INCB	R0				; R0 = 1
 ; DEBUG
-;	clrb	Decen+2
-	movb	R0, Decen+2			; set (DECEN+1) = 1 (remove invul.)
+	clrb	Decen+2
+;	movb	R0, Decen+2			; set (DECEN+1) = 1 (remove invul.)
 	MOVB	R0, K33464			; set HELD value = 1 = Shuriken
 	MOVB	R0, K33465			; set NEAR value = 1
 	MOVB	R0, K33542			; set JUMP = 1

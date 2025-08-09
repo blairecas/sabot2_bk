@@ -1780,8 +1780,8 @@ CoreStart:
 	MOV	#K70632-15., RoomAddr		; MAP-15 address -> RM+1
 	INCB	R0				; R0 = 1
 ; DEBUG
-	clrb	Decen+2
-;	movb	R0, Decen+2			; set (DECEN+1) = 1 (remove invul.)
+;	clrb	Decen+2
+	movb	R0, Decen+2			; set (DECEN+1) = 1 (remove invul.)
 	MOVB	R0, K33464			; set HELD value = 1 = Shuriken
 	MOVB	R0, K33465			; set NEAR value = 1
 	MOVB	R0, K33542			; set JUMP = 1
@@ -2572,8 +2572,10 @@ K17654:	MOV	#3, R0
 K17660:	MOVB	R0, K17635			; set LETNO
 	BR	K17736
 
-K17666:	.ASCII	/OLONEL BRIGGSY  EX/		; LETC2
-K17710:	.ASCII	/PLORER/
+;K17666:	.ASCII	/OLONEL BRIGGSY  EX/		; LETC2
+;K17710:	.ASCII	/PLORER/
+; no way you Briggsy, it's Satan now
+
 K17716:	.WORD	0				; BIKMR
 K17720:	.ASCII	/ BIKE ARRIVED /		; BIKAM
 

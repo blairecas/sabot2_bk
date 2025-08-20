@@ -5010,37 +5010,41 @@ K50744:	CLRB	K33542				; clear JUMP
 
 K50764:	.ASCII	/STASH SEARCHED/
 
+; search stash
 K51002:	DECB	K37662
 	BEQ	K51014
 	JMP	K25276
 K51014:	MOV	K23746, R3			; get NERST
-	MOVB	(R3), K23750			; -> TEMPN
+	MOVB	(R3), K23750			; -> TEMPN -> save first item
+	; scroll items in the box
 	MOV	#5, R1
 K51030:	MOVB	1(R3), R0
 	MOVB	R0, (R3)+
-	CMPB	R0, #3
+	CMPB	R0, #3				; empty item?
 	BEQ	K51046
 	SOB	R1, K51030			; repeat
+	; all were scrolled
 K51046:	DEC	R3
-	CMPB	K23750, #4			; TEMPN == 4 ?
+	CMPB	K23750, #4			; TEMPN == 4 ? first item was 'tape'?
 	BNE	K51150
-	MOV	K51142, R2
-	INC	R2
-	MOV	R2, K51142
+	; increase tapes count
+	movb	#3, (R3)			; infinite tapes BUG FIX - set last item as 'empty'
+	inc	K51142
+	mov	K51142, R2			; where to print
 	MOV	#K51145, R3			; TAPCT address
 	INCB	(R3)
 	CALL	Random				; Get random number
 	BIC	#177776, R0
 	ADD	#45, R0
-	MOVB	R0, -(R3)
+	MOVB	R0, -(R3)			; set random 'tape' character to print
 	MOV	#1, R1				; 1.
 	CALL	PrintStr			; PRINT string
 	MOV	#144, R1			; 100.
 	CALL	L10244				; MONUP
-	JMP	K55262
+	JMP	K55262				; set 'stand up' for Nina
 
-K51142:	.WORD	0
-	.BYTE	0
+K51142:	.WORD	0				; tapes print position
+	.BYTE	0				; character of 'tape' to print (choosen randomly from 'tapes' chars)
 K51145:	.BYTE	0				; TAPCT - tapes held
 K51146:	.WORD	0				; TAPTT - tapes already placed
 

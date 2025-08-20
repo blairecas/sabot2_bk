@@ -28,6 +28,16 @@ rem -- put to disk --
 ..\scripts\bkdecmd a ./release/andos.img ./release/sabot2.ov2 >NUL
 ..\scripts\bkdecmd a ./release/andos.img ./release/sabot2.ov6 >NUL
 
+rem -- make wave's
+php -f ../scripts/bin2wav.php ./release/sabot2.bin
+if %ERRORLEVEL% NEQ 0 ( exit /b )
+php -f ../scripts/bin2wav.php ./release/sabot2.ov1 40000
+if %ERRORLEVEL% NEQ 0 ( exit /b )
+php -f ../scripts/bin2wav.php ./release/sabot2.ov2 40000
+if %ERRORLEVEL% NEQ 0 ( exit /b )
+php -f ../scripts/bin2wav.php ./release/sabot2.ov6 40000
+if %ERRORLEVEL% NEQ 0 ( exit /b )
+
 rem -- run bkemu --
 echo.
 start ..\..\bkemu\BK_x64.exe /C BK-0011M_FDD

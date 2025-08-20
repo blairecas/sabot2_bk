@@ -18,14 +18,27 @@ START:	mov	#1000, SP
 	mov	#MsgEr0, R0
 	br	GameError
 
-10$:	; DEBUG setup timer
-	mov	#177777, @#177706
-	mov	#20, @#177712
-	; DEBUG
-
-	; hello kitty
+10$:	; hello kitty
 	mov	#MsgLoa, R0
 	call	PrintEmt
+
+	; check what routine will load other files
+	call	CheckStdRom
+	beq	LoadAndos
+
+	; loading with BOS BK0011M tape loader
+	mov	#B11TapeArea, R0
+	emt	115
+	incb	B11Ram
+	incb	OvlFnm+9.
+	emt	115
+	movb	#6, B11Ram
+	movb	#'6, OvlFnm+9.
+	emt	115
+	br	StartPrepare
+
+; load game files under andos (it's using old BK0010 EMT's)
+LoadAndos:
 	; load bank 1
 	mov	#C_RAM_BANKS14, @#177716
 	call	LoadOver
@@ -37,10 +50,9 @@ START:	mov	#1000, SP
 	mov	#C_RAM_BANKS64, @#177716
 	movb	#'6, OvlFnm+9.
 	call	LoadOver
-	; normal banks (not needed here but whatever)
-	mov	#C_RAM_BANKS12, @#177716
 
-	; prepare 
+; all is loaded - prepare BK0011M (assume we are under andos)
+StartPrepare:
 	mtps	#200
 	mov	#BackupVals, R0
 	mov	@#004, (R0)+			; save to be replaced interrupt vectors
@@ -56,6 +68,11 @@ START:	mov	#1000, SP
 	mov	#KeyFuncInt, @#274		; keys (func) interrupt
 	mov	#StopInt, @#4			; STOP key interrupt
 	clr	@#177660			; allow keyboard interrupts
+
+	; DEBUG setup timer
+	mov	#177777, @#177706
+	mov	#20, @#177712
+	; DEBUG
 
 	; set joystick bad bits
 	clr	JoyBadBits
@@ -79,7 +96,7 @@ GameError:
 	wait	
 	halt
 
-; load overlay file to 40000
+; load overlay file to 40000 (BK0010 EMTs)
 LoadOver:
 	movb	#3, @#320
 	mov	#40000, @#322
@@ -118,11 +135,30 @@ PrintEmt:
 	mov	(SP)+, R2
 	return
 
+; check 'standard' BK0010 ROM at 100000 (andos will set it)
+CheckStdRom:
+	mov	#100004, R0			; check 'standard' ROM at 100000
+	mov	-(R0), R1
+	add	-(R0), R1
+	cmp	R1, #167+254
+	return
+
 MsgEr0:	.asciz	"This game is for BK0011M"
 MsgEr1:	.asciz	"Unable to load game files"
 MsgLoa:	.asciz	"Loading ..."
-OvlFnm:	.ascii	"sabot2.ov1      "
 	.even
+
+; this is for loading from tape on BK0011M without andos
+B11TapeArea:
+	.word	1				; operation: 1 - read from tape
+	.word	40000				; start addr for read
+	.word	40000				; length (not used for read)
+OvlFnm:	.ascii	"sabot2.ov1      "		; file name
+B11Ram:	.byte	1				; RAM page for 40000-100000 (negative - use current)
+	.byte	4				; RAM page for 100000-140000
+	.word	0				; (returning) addr
+	.word	0				; (returning) length
+	.ascii	"                "		; (returning) fname
 
 
 ; //////////////////////////////////////////////////////////////////////////////
@@ -262,7 +298,7 @@ K06504:	.BYTE	000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000
 
 ; guard tiles
 ; 243..245 - flamethrower
-; (!!!) they are +1 in this table too
+; (!!!) they are +1 in this table
 GuardTilesAttr:
 	.byte	0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 000 - 020
 	.byte	0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 020 - 040
@@ -283,14 +319,14 @@ GuardTilesAttr:
 ; (waste of memory to color only flamethrower, but alas..)
 
 ; waste of memory too ^_^
-; 117 - 126 - electric fence
+; 117 - 125 - electric fence
 ElectroTbl:
 	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 000 - 020
 	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 020 - 040
 	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 040 - 060
 	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 060 - 100
 	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0,20 ; 100 - 120
-	.byte	20,20,20,20,20,20,20, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 120 - 140
+	.byte	20,20,20,20,20,20, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 120 - 140
 	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 140 - 160
 	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 160 - 200
 	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 200 - 220
@@ -479,7 +515,19 @@ KeyInt:	mov	R0, -(SP)
 
 ; func keys interrupt
 KeyFuncInt:
-	tst	@#177662
+	mov	R0, -(SP)
+	mov	@#177662, R0
+	tstb	JoyUsed				; do not use keyboard if we already used joystick
+	bne	90$
+	cmp	R0, #C_KEY_LEFT
+	bne	10$
+	bis	#P_KEY_LEFT, PpuKeys
+	br	80$
+10$:	cmp	R0, #C_KEY_RIGHT
+	bne	90$
+	bis	#P_KEY_RIGHT, PpuKeys
+80$:	bis	#P_KEY_UP, PpuKeys
+90$:	mov	(SP)+, R0
 	rti
 
 
@@ -1735,12 +1783,9 @@ wTitle:	.word	0
 	mov	(R0)+, @#102 
 	movb	#^B01001111, @#177663		; screen buf 5, disable vsync, palette 15
 	mov	#C_RAM_BANKS54, @#177716
-	; hmm, can I just use HALT here? no? (halt with andos will wait for keypress)
-	mov	#100004, R0			; check 'standard' ROM at 100000
-	mov	-(R0), R1
-	add	-(R0), R1
-	cmp	R1, #167+254
-	beq	99$				; seems we have it
+	; can I just use HALT here?
+	call	CheckStdRom			; check 'standard' 'ROM' at 100000
+	beq	99$
 	mov	@#177716, R0			; else go to reset addr
 	clrb	R0
 99$:	jmp	(R0)
@@ -5362,18 +5407,28 @@ K53066:	CALL	K53612				; SETLG
 	JMP	K55246				; => SETVC - set vectors
 
 ; NLEFT: Check down direction
+; LIFT DOWN start
 K53106:	bit	#P_KEY_DOWN, PpuKeys		; bit 2 ? down
 	BEQ	K53300				; no => NDOWN
-	MOVB	ManBf+52, R0			; get (MANBF+42.)
-	TSTB	K36264				; check DIR
-	BEQ	K53132
-	MOVB	ManBf+57, R0			; get (MANBF+47.)
+	; replace bugged lift down check
+	mov	K36212, R0			; MANPS
+	movb	7.*32.+BuffB(R0), R1
+	cmpb	R1, #324			; left lift tile?
+	bne	K53166				; nope, it's not lift
+	movb	8.*32.+BuffB(R0), R1
+	cmpb	R1, #10				; blue stones tile under?
+	bne	K53166				; nope, it can be a lift, but we can't go down
+; bugged (classic ZX bug)
+;	MOVB	ManBf+52, R0			; get (MANBF+42.)
+;	TSTB	K36264				; check DIR
+;	BEQ	K53132
+;	MOVB	ManBf+57, R0			; get (MANBF+47.)
 ; FEGJB:
-K53132:	CMPB	R0, #324			; == 212. ?
-	BNE	K53166				; no => NLFTD
-	movb	BuffB+549., R0
-	CMPB	R0, #10				; == 10. ?
-	BNE	K53166
+;K53132:	CMPB	R0, #324			; == 212. ?
+;	BNE	K53166				; no => NLFTD
+;	movb	BuffB+549., R0
+;	CMPB	R0, #10				; == 10. ?
+;	BNE	K53166
 	CALL	L10300				; MONYP - Print MONEY
 	MOV	#K54562, R3			; LIFTD address
 	JMP	K55252				; => SETV2 - set vector
@@ -6032,5 +6087,10 @@ CBuffsDiffA =: BuffD - 61014
 @include music.mac
 
 EndOfCpu = .
+
+	; (!!!) OVERFLOW WARNING
+	.if LT 140000-.
+	.error Main program exceeds its limits
+	.endc
 
 	.end	START

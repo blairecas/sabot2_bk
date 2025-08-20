@@ -8,6 +8,11 @@
 ; !!MUT-ARG!! - the command argument is mutable
 ; !!MUT-2ndARG!! - the command 2nd argument is mutable
 
+; constants for speed up debug
+C_TAPES_NEEDED  =: 10.				; tapes needed to launch rocket
+C_NORMAL_ENERGY =: 1				; 1 - normal energy, 0 - infinite
+
+
 @include common.mac
 
 START:	mov	#1000, SP
@@ -82,7 +87,6 @@ StartPrepare:
 
 	; start core
 	mov	#C_RAM_BANKS12, @#177716
-	mtps	#0
 	jmp	CoreStart
 
 
@@ -143,9 +147,9 @@ CheckStdRom:
 	cmp	R1, #167+254
 	return
 
-MsgEr0:	.asciz	"This game is for BK0011M"
-MsgEr1:	.asciz	"Unable to load game files"
-MsgLoa:	.asciz	"Loading ..."
+MsgEr0:	.asciz	<12><15>"This game is for BK0011M"
+MsgEr1:	.asciz	<12><15>"Unable to load game files"
+MsgLoa:	.asciz	<12><15>"Loading ..."
 	.even
 
 ; this is for loading from tape on BK0011M without andos
@@ -344,17 +348,16 @@ ElectroTbl:
 	.radix	10
 
 ; cat paw
-Snd000:	.byte	10, 10, 14, 14, 22, 22, 26, 26, 32, 32, 36, 36, 40, 40, 44, 44, 48, 48, 52, 52
+Snd000:	.byte	10, 10, 14, 14, 22, 22, 26, 26, 32, 32, 36, 36, 40, 40, 44, 44 ; , 48, 48, 52, 52
 	.byte	0
 
 ; guard kick
-Snd001:	.byte	21, 15, 27, 15, 46, 29, 16, 11, 22, 21, 38, 26, 36, 27, 30, 10
-	.byte	188, 235, 143, 109, 54, 52, 52, 196, 116, 120, 136, 163
+Snd001:	.byte	21, 15, 46, 29, 16, 11, 22, 21, 38, 26
+	.byte	110, 135, 93, 42, 32, 126, 86, 70
 	.byte	0
 
 ; guard punch
-Snd002:	.byte	21, 15, 46, 29, 16, 11, 22, 21, 38, 26
-	.byte	110, 135, 93, 42, 32, 126, 86, 70
+Snd002:	.byte	20,10, 30,10, 40,10
 	.byte	0
 
 ; drop on floor
@@ -382,7 +385,8 @@ Snd005:	.byte	30,30, 30,30, 20,20
 	.byte	0
 
 ; guard hit by Nina
-Snd006:	.byte	20,10, 30,10, 40,10
+Snd006:	.byte	21, 15, 27, 15, 46, 29, 16, 11, 22, 21, 38, 26, 36, 27, 30, 10
+	.byte	188, 235, 143, 109, 54, 52, 52, 196, 116, 120, 136, 163
 	.byte	0
 
 	.even
@@ -1768,6 +1772,7 @@ RocketTilesAddr:
 
 StopInt:
 	; if we are in a title screen - exit to andos
+	mtps	#200
 	mov	#1000, SP
 	mov	#C_RAM_BANKS12, @#177716
 	call	Pt3Mute
@@ -1788,9 +1793,12 @@ wTitle:	.word	0
 	beq	99$
 	mov	@#177716, R0			; else go to reset addr
 	clrb	R0
-99$:	jmp	(R0)
+99$:	mtps	#0
+	jmp	(R0)
 
+; soft start, title, music etc.
 CoreStart:
+	mtps	#0
 
 ;02$:	mov	#Snd000, SoundCur
 ;	clr	PpuKeys
@@ -1816,7 +1824,7 @@ CoreStart:
 	clr	R1
 	call	Pt3Init
 	clr	PpuKeys
-	clrb	JoyUsed
+	clr	JoyCur				; (!) WORD, also clears JoyUsed
 10$:	clr	VsyCnt
 	call	Pt3Play
 	tst	VsyCnt
@@ -1838,7 +1846,6 @@ CoreStart:
 	call	PrepareBank3
 
 	; init some vars
-	movb	#10., K52626			; tapes needed (14. in original)
 	movb	#377, K17200			; use bike
 	movb	#1, K11770			; fence is on
 	movb	#356, K31220+2			; room with fence type
@@ -1894,8 +1901,7 @@ CoreStart:
 	MOV	#050205, K51142			; where to print tapes, set PTSPS
 	CLR	R0
 	CLRB	K24762
-	CLRB	K51145				; clear TAPCT - tapes carried total
-	CLRB	K51146				; clear TAPTT
+	clrb	TapesCount			; clear TAPCT - tapes carried total
 	CLRB	K17716				; clear BIKMR
 	CLRB	K36216				; clear ELECU
 	CLRB	K33540				; clear DEAD
@@ -1907,13 +1913,12 @@ CoreStart:
 	CLRB	K36264				; set DIR = 0
 	MOV	#K70632-15., RoomAddr		; MAP-15 address -> RM+1
 	INCB	R0				; R0 = 1
-; DEBUG
-;	clrb	Decen+2
 	movb	R0, Decen+2			; set (DECEN+1) = 1 (remove invul.)
 	MOVB	R0, K33464			; set HELD value = 1 = Shuriken
 	MOVB	R0, K33465			; set NEAR value = 1
 	MOVB	R0, K33542			; set JUMP = 1
 	MOVB	R0, K36207			; set TIME2 = 1
+	movb	#C_NORMAL_ENERGY, Decen+2	; remove invulnerability
 
 ; revive/reset dead guards
 GrdRevive:
@@ -2487,21 +2492,20 @@ K16264:	MOVB	(R4)+, (R3)+			; | <
 	SOB	R1, K16260			; repeat
 	JMP	K13422
 
-; ??? 3x3 tiles
 ; treasure chest
 K16306:	.BYTE	026,027,030
 	.BYTE	031,032,033
 	.BYTE	034,035,036
-
-; ??? 2x2 tiles
-; hidden ladder
-K16317:	.BYTE	037,037
-	.BYTE	037,037
-	.EVEN
+	.even
 
 ; Room marker $1F 037 - ??? 2x2 tiles
 ; room above infinite energy room, hidden ladder
-K16324:	; we will NOT hide ladder - let users know about room below
+K16324:	; put some foreground tiles to hide ladder
+	mov	#037, R1			; foreground tile that looks like rock wall
+	movb	R1, 16.*32.+17.+BuffO
+	movb	R1, 16.*32.+18.+BuffO
+	movb	R1, 17.*32.+17.+BuffO
+	movb	R1, 17.*32.+18.+BuffO
 	br	K16466
 
 ; Room marker $1D 035 - ??? 3x3 tiles
@@ -5076,7 +5080,7 @@ K51046:	DEC	R3
 	movb	#3, (R3)			; infinite tapes BUG FIX - set last item as 'empty'
 	inc	K51142
 	mov	K51142, R2			; where to print
-	MOV	#K51145, R3			; TAPCT address
+	MOV	#TapesCount, R3			; TAPCT address
 	INCB	(R3)
 	CALL	Random				; Get random number
 	BIC	#177776, R0
@@ -5088,10 +5092,9 @@ K51046:	DEC	R3
 	CALL	L10244				; MONUP
 	JMP	K55262				; set 'stand up' for Nina
 
-K51142:	.WORD	0				; tapes print position
-	.BYTE	0				; character of 'tape' to print (choosen randomly from 'tapes' chars)
-K51145:	.BYTE	0				; TAPCT - tapes held
-K51146:	.WORD	0				; TAPTT - tapes already placed
+K51142:		.word	0				; tapes print position
+		.byte	0				; character of 'tape' to print (choosen randomly from 'tapes' chars)
+TapesCount:	.byte	0				; TAPCT - tapes held
 
 K11770:	.WORD	000				; CONQU
 
@@ -5318,60 +5321,37 @@ K52402:	MOVB	K13224+2, R0			; get (DRFNT+1)
 	MOV	#K52736, R3			; "  FENCE IS ON "
 	BR	K52362				; => BUTCR
 
+
 ; K2DAQ: Console, room type == $3D - room left to rocket
 ; rocket launch 
 K52446:	; was it already launched?
 	tst	RocketLaunched
 	beq	10$
-	jmp	K25276
+	jmp	K25276				; continue 
 	; 
-10$:	MOV	#050146, R2			; screen coords
-	MOV	#16, R1				; 14. string length
-	MOV	#K51145, R3			; TAPCT addr
-	MOVB	K51146, R0			; get TAPTT
-	BEQ	K52472				; 0 => KINTE
-	MOVB	R0, (R3)			; TAPTT -> TAPCT
-; KINTE
-K52472:	MOVB	(R3), R0			; get TAPCT
-	BEQ	K52576				; 0 => KODNA
-	CMPB	K52626, (R3)			; get NTPND - tapes needed
-	BHIS	K52612				; => KDNTA
-K52504:	MOVB	K51146, R0			; get TAPTT
-	BNE	K52526				; => ALRGM
-	PUSH	R2
-	PUSH	R1
-	CALL	L15506				; PLFHN - MONEY up 500.
-	POP	R1
-	POP	R2
-
-; ALRGM:
-K52526:	MOVB	K51145, K51146			; copy TAPCT -> TAPTT
-	MOV	#K52646, R3			; "CODE ACCEPTED"
-	CALL	PrintStr			; PRINT string
-	; (!) LAUNCH IT (!)
+10$:	mov	#050146, R2			; screen coords
+	mov	#16, R1				; 14. string length
+	movb	TapesCount, R0
+	bne	20$
+	mov	#K52630, R3			; CODE NEEDED
+	call	PrintStr
+	br	99$
+20$:	cmpb	R0, #C_TAPES_NEEDED
+	bhis	30$
+	mov	#K52664, R3			; CODE REJECTED
+	call	PrintStr
+	br	99$
+30$:	mov	#K52646, R3			; CODE ACCEPTED
+	call	PrintStr
 	call	RocketLaunch
+	call	L15506				; add some money (500.)
+99$:	jmp	K25276
 
-; ERACD:
-; erase codes from screen
-K52544:	JMP	K25276				; => ENDVC
-
-; KODNA:
-K52576:	MOV	#K52630, R3			; " CODE  NEEDED "
-	CALL	PrintStr			; PRINT string
-	JMP	K25276				; => ENDVC
-
-; KDNTA:
-K52612:	BEQ	K52504				; => JIUWC
-	MOV	#K52664, R3			; "CODE  REJECTED"
-	CALL	PrintStr			; PRINT string
-	BR	K52544				; => ERACD
-
-
-K52626:	.WORD	0				; NTPND - tapes needed
 
 K52630:	.ASCII	/ CODE  NEEDED /
 K52646:	.ASCII	/CODE  ACCEPTED/
 K52664:	.ASCII	/CODE  REJECTED/
+
 K52702:	.ASCII	/ LIFT IS DOWN /
 K52720:	.ASCII	/  LIFT IS UP  /
 K52736:	.ASCII	/  FENCE IS ON /

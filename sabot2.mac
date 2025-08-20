@@ -51,11 +51,17 @@ START:	mov	#1000, SP
 	clr	@#177662			; screen 5, palette 0, vsync on
 	mov	#1330, @#177664			; reset screen scroll (if any)	
 	mov	#VsyInt, @#100			; vsync interrupt
-	clr	@#102				; allow other interrupts while vsync
+	mov	#200, @#102			; (!) DON'T allow other interrupts while vsync
 	mov	#KeyInt, @#60			; keys (main) interrupt
 	mov	#KeyFuncInt, @#274		; keys (func) interrupt
 	mov	#StopInt, @#4			; STOP key interrupt
 	clr	@#177660			; allow keyboard interrupts
+
+	; set joystick bad bits
+	clr	JoyBadBits
+	clr	R0
+	bis	@#177714, JoyBadBits
+	sob	R0, .-6
 
 	; start core
 	mov	#C_RAM_BANKS12, @#177716
@@ -132,9 +138,11 @@ BackupVals:	.blkw	5
 
 JoyCur:		.byte	0
 JoyUsed:	.byte	0
+JoyBadBits:	.word	0
 
 PpuKeys:	.word	0
 FramesCount:	.word	0
+SoundCur:	.word	0			; addr of sound bytes (0 - no sound)
 
 Energy:		.word	0
 NinaOnFire:	.word	0
@@ -295,6 +303,56 @@ ElectroTbl:
 	.byte	 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0 ; 360 - 400
 
 
+	; sounds
+
+	.radix	10
+
+; cat paw
+Snd000:	.byte	10, 10, 14, 14, 22, 22, 26, 26, 32, 32, 36, 36, 40, 40, 44, 44, 48, 48, 52, 52
+	.byte	0
+
+; guard kick
+Snd001:	.byte	21, 15, 27, 15, 46, 29, 16, 11, 22, 21, 38, 26, 36, 27, 30, 10
+	.byte	188, 235, 143, 109, 54, 52, 52, 196, 116, 120, 136, 163
+	.byte	0
+
+; guard punch
+Snd002:	.byte	21, 15, 46, 29, 16, 11, 22, 21, 38, 26
+	.byte	110, 135, 93, 42, 32, 126, 86, 70
+	.byte	0
+
+; drop on floor
+Snd003:	.byte	11, 18, 56, 89, 05, 06
+	.byte	0
+
+; switch console
+Snd004:	.byte	020, 025, 024, 023, 021, 020, 025, 024, 023, 022, 021, 020
+	.byte	020, 025, 024, 023, 021, 020, 025, 024, 023, 022, 021, 020
+	.byte	025, 024, 023, 022
+	.byte	1
+	.byte	080, 082, 081, 082, 082, 082, 082, 082, 082, 080, 080, 090
+	.byte	080, 082, 081, 082, 082, 082, 082, 080
+	.byte	1
+	.byte	120, 122, 124, 124, 122, 120, 122, 124, 124, 122, 122, 120
+	.byte	120, 122, 124
+	.byte	1
+	.byte	020, 025, 024, 023, 021, 020, 025, 024, 023, 022, 021, 020
+	.byte	020, 025, 024, 023, 021, 020, 025, 024, 023, 022, 021, 020
+	.byte	025, 024, 023, 022
+	.byte	0
+
+; dagger or bat hit (they are all missiles)
+Snd005:	.byte	30,30, 30,30, 20,20
+	.byte	0
+
+; guard hit by Nina
+Snd006:	.byte	20,10, 30,10, 40,10
+	.byte	0
+
+	.even
+	.radix	8
+
+
 ; //////////////////////////////////////////////////////////////////////////////
 ; // Utils
 ; //////////////////////////////////////////////////////////////////////////////
@@ -426,18 +484,46 @@ KeyFuncInt:
 
 
 ; Vsync interrupt
-VsyInt:	; count #1
+VsyInt:	; count	#0
+	inc	(PC)+
+VsyGme:	.word	0
+	; count #1
  	inc	(PC)+
 VsyCnt:	.word	0
 	mov	R0, -(SP)
 	; set keys from joystick
-	mov	@#177714, R0
+	mov	@#177714, R0			; get joy bits
+	bic	JoyBadBits, R0			; clear bad ones
 	cmpb	R0, JoyCur
 	beq	10$
 	movb	R0, JoyCur
 	bisb	R0, PpuKeys
 	movb	#1, JoyUsed
-10$:	; check for 10-sec
+10$:	; check sound
+	mov	SoundCur, R0
+	beq	80$
+	mov	R1, -(SP)
+	clr	R1
+30$:	bisb	(R0)+, R1
+	beq	40$				; end of sound	
+	cmp	#1, R1
+	beq	50$				; end of current frame sound
+	mov	#300, @#177716			; low speaker?
+	nop
+	sob	R1, .-2
+	bisb	(R0)+, R1
+	beq	40$				; end of sound
+	cmp	#1, R1
+	beq	50$				; end of current frame sound
+	mov	#200, @#177716			; high speaker?
+	nop
+	sob	R1, .-2
+	br	30$
+40$:	clr	R0
+50$:	mov	R0, SoundCur
+	mov	(SP)+, R1
+	; end of sound
+80$:	; check for 10-sec
 	cmp	VsyCnt, #500.
 	blo	VsyRti
 	inc	FpsOutput+2			; flag to draw fps
@@ -929,17 +1015,17 @@ TBufFore:
 	bis	(R1)+, (R2)+
 	.endr
 	movb	(R1), R0			; BK attribute
-	beq	.+4				; do not update 
+	beq	.+4				; do not update if zero attr
 	mov	R0, (R2)
 
 ; output tile buffer to screen (R5 - addr in BufD)
+; TileBuf: .byte [8pix] [8pix] [8pix] ... [8pix] [BK attr byte] [0]
 TBufOut:
-	; index to screen coords
 	mov	R5, R1
-	sub	#BuffD, R1
+	sub	#BuffD, R1			; R1 - index of tile on screen
 	asl	R1
-	mov	Index2Vaddr(R1), R1
-	mov	TileBuf+8., R0			; bk color attrs byte
+	mov	Index2Vaddr(R1), R1		; R1 <- vaddr
+	mov	TileBuf+8., R0			; BK color attrs
 	mov	Byte2WordTbl(R0), 20$+2		; modify color table addr by BK color attrs
 	mov	#TileBuf, R0
 	mov	#8., R3
@@ -1058,19 +1144,19 @@ DrawItem:
 ; Clear buffers
 ; BUFCL procedure: Fill Ninja tile screen
 ClearBuffNina:
-	mov	#BuffN, R3			; BUFFN Ninja tile screen address
+	mov	#BuffN, R0			; BUFFN Ninja tile screen address
 	mov	#000110, R1			; 72. * 4 = 288. words
 ClearBuff:	
-	mov	#177777, R5			; filler
-10$:	mov	R5, (R3)+			; <
-	mov	R5, (R3)+
-	mov	R5, (R3)+
-	mov	R5, (R3)+
+	mov	#177777, R2			; filler
+10$:	mov	R2, (R0)+			; <
+	mov	R2, (R0)+
+	mov	R2, (R0)+
+	mov	R2, (R0)+
 	sob	R1, 10$				; repeat
 	return
 ; BUFC2 procedure: Fill Enemy 0/1 tile screens
 ClearBuffGuards:	
-	mov	#BuffG1, R3			; BUFG1 Enemy 0 tile screen address
+	mov	#BuffG1, R0			; BUFG1 Enemy 0 tile screen address
 	mov	#000220, R1			; 144.
 	br	ClearBuff			; fill Enemy 0/1 tile screens
 
@@ -1082,14 +1168,6 @@ SoundStep:
 	nop
 	sob	R0, .-2
 	bic	#100, @#177716
-	return
-
-; sound 2 (guard was hit)
-Sound2:
-	return
-
-; sound 'console use'
-SoundConsole:
 	return
 
 
@@ -1667,7 +1745,14 @@ wTitle:	.word	0
 	clrb	R0
 99$:	jmp	(R0)
 
-CoreStart:	
+CoreStart:
+
+;02$:	mov	#Snd000, SoundCur
+;	clr	PpuKeys
+;	tst	PpuKeys
+;	beq	.-4
+;	br	02$
+
 	; title screen
 	call	FadeScreen
 	mov	#C_RAM_BANKS32, @#177716
@@ -1708,9 +1793,7 @@ CoreStart:
 	call	PrepareBank3
 
 	; init some vars
-; DEBUG
-	movb	#1, K52626			; tapes needed
-;	movb	#14., K52626			; tapes needed
+	movb	#10., K52626			; tapes needed (14. in original)
 	movb	#377, K17200			; use bike
 	movb	#1, K11770			; fence is on
 	movb	#356, K31220+2			; room with fence type
@@ -1786,19 +1869,22 @@ CoreStart:
 	MOVB	R0, K33465			; set NEAR value = 1
 	MOVB	R0, K33542			; set JUMP = 1
 	MOVB	R0, K36207			; set TIME2 = 1
-	MOV	#K33556, R3			; TRACK1+11.
-	MOV	#14, R2				; 12.
-	MOV	#145, R1			; 101.
-; GRDIN:
-K13036:	MOVB	(R3), R0			; <
+
+; revive/reset dead guards
+GrdRevive:
+	MOV	#K33543+11., R3			; TRACK1+11. (last byte of guard records)
+	MOV	#12., R2			; 12. - guard record size
+	MOV	#145, R1			; 101. - guards count
+10$:	MOVB	(R3), R0			; <
 	CMPB	R0, #5				; == 5 ?
-	BNE	K13050				; => NDGIT
+	BNE	20$				; => NDGIT
 	CLRB	(R3)
-K13050:	CMPB	R0, #6				; == 6 ?
-	BNE	K13062
+20$:	CMPB	R0, #6				; == 6 ?
+	BNE	30$
 	MOVB	#1, (R3)
-K13062:	ADD	R2, R3
-	SOB	R1, K13036			; repeat
+30$:	ADD	R2, R3
+	SOB	R1, 10$
+
 	CALL	DrawHeld			; HLDOD
 
 ; INISC: Init screen, room changed
@@ -2913,10 +2999,16 @@ LiftSigns:
 ; remove rocket if we already launched it
 ; rocket rooms are 4 (3 with rocket and one top lid room)
 RemoveRocket:
+	movb	@RoomAddr, R0
 	tst	RocketLaunched
 	beq	90$
-	movb	@RoomAddr, R0
-	cmpb	R0, #013			; room 0 - top lid room
+;	bne	02$				; already launched
+;	; write SATAN on it (middle rocket part)
+;	cmpb	R0, #075
+;	bne	90$
+;	br	90$
+
+02$:	cmpb	R0, #013			; room 0 - top lid room
 	bne	10$
 	mov	#Rocket0Replace, R0
 	br	ReplaceBuffB
@@ -3004,17 +3096,23 @@ K24762:	.BYTE	000, 000			; DEFGH
 
 ; NXMAN:
 MainCycle:
+	; wait some if we are too fast
+	; at last, I'm putting wait in a game ^)
+	cmp	VsyGme, #4
+	blo	.-6
+	clr	VsyGme
+
 	; DEBUG timer start
 	mov	#20, @#177712
 
-	call	ClearBuffNina		; BUFCL Fill Ninja tile screen
+	call	ClearBuffNina			; BUFCL Fill Ninja tile screen
 
 	; flamethrower tiles update (stop after use once)
 	; mutable after using flamethrower
 K25006:	mov	#000000, R1
 	beq	K25040
 K25012:	mov	#BuffG1, R3			; guard 1 by default ?
-	sub	#4400, R3			; to BuffD
+	sub	#BuffG1-BuffD, R3		; to BuffD
 	mov	#1, R0				; (1) is ok
 K25026:	movb	R0, (R3)
 K25030:	inc	R3				; | !!MUT-CMD!! (dec or  inc)
@@ -3044,25 +3142,26 @@ K25040:	; flamethrower ends
 ;K25206:	MOV	#K24756, R2
 ;	CALL	K24712				; PLATR
 
-K25216:	; fill Nina's ManBf (not on top rooms, we are just gliding there)
+K25216:	; fill Nina's ManBf, draw NEAR
+	; (not on top rooms, we are just gliding there)
 	call	PrepManBf
 	tstb	RoomY				; check RMDN room level
-	beq	10$				; 0 (top)
+	beq	90$				; 0 (top)
 	call	K36220				; MANAR (fill MANBF)
-10$:	call	PrepDraBuf
-	;
-	CLR	R1
-	CMPB	ManBf+46, #144			; == 100. ?
-	BNE	K25250
-	MOVB	@K23746, R1			; get new NEAR value
-; KIPER
-K25250:	MOV	R1, R0				; R0 = object near
-	MOV	#K33465, R3			; NEAR value address
-	MOVB	(R3), R5			; get NEAR value
-	MOVB	R0, (R3)			; set new NEAR value
-	CMPB	R0, R5				; compare old/new NEAR values
-	BEQ	K25272				; same, no need to update => jump
-	CALL	DrawNear			; NERDR - update NEAR indicator
+	; if we are stepping on box?
+	clr	R1
+	cmpb	ManBf+46, #144			; == 100. ?
+	bne	20$
+	movb	@K23746, R1			; get new NEAR value
+	; KIPER
+20$:	mov	R1, R0				; R0 = object near
+	mov	#K33465, R3			; NEAR value address
+	movb	(R3), R5			; get NEAR value
+	movb	R0, (R3)			; set new NEAR value
+	cmpb	R0, R5				; compare old/new NEAR values
+	beq	90$				; same, no need to update
+	call	DrawNear			; NERDR - update NEAR indicator
+90$:	call	PrepDraBuf			; (!) set to draw to buffX (!)
 
 ; VECTN:
 K25272:	JMP	@#000000			;!!MUT-ARG!!
@@ -3070,7 +3169,9 @@ K25272:	JMP	@#000000			;!!MUT-ARG!!
 ; ENDVC:
 K25276:	CALL	K36266				; MANDR
 	; CALL	K36220				; MANAR (again update BuffD, do we need it?)
-	CALL	ClearBuffGuards			; BUFC2 Fill Enemy 0/1 tile screens	
+
+	; skip it here - it must be set on first guard entering player's screen
+	; CALL	ClearBuffGuards			; BUFC2 Fill Enemy 0/1 tile screens	
 
 ; NDRON:
 K25362:	MOVB	K77520, R0			; get GLGP1
@@ -3082,16 +3183,56 @@ K25362:	MOVB	K77520, R0			; get GLGP1
 	MOVB	K77530, R0			; get DLGP1
 	INCB	R0
 	CMPB	R0, #3
-	BNE	K25426
+	BNE	10$
 	CLR	R0
 ; GYGYU:
-K25426:	MOVB	R0, K77530
+10$:	MOVB	R0, K77530
 	ASL	R0
 	MOV	K77522(R0), R3			; DLGTB
 	MOV	R3, K27556+2
-	MOV	#K33543, R4
-	MOV	#145, R1
-K25454:	PUSH	R1
+
+	; DEBUG TIMER
+	mov	@#177710, Timer1
+	mov	#20, @#177712
+
+; // all guards cycle //
+
+	mov	#177777, GrdAClrBuf		; for clearing their buffG1 buffG2 just once
+	MOV	#K33543, R4			; guards table addr?
+	MOV	#145, R1			; all guards count?
+
+; will be jump here (!) processing for all guards in a game (!)
+; (!!!) REMOVE PROCESS NOT NEEDED GUARDS
+; (!!!) WE NEED ONLY WHOSE NEARBY
+
+GProcStart:
+	PUSH	R1
+
+	; first check if that guard is 'nearby' (check by roomY +/-1 is enough)
+	movb	(R4), R0			; current guard roomY
+	bic	#^B1111111110000000, R0		; clean not needed attr (high byte bit - what's this?)
+	movb	RoomY, R1
+	sub	R1, R0
+GrdSameRoom =: .+2
+	mov	R0, #000000			; set current guard same room by Y flag
+	add	#1, R0
+	cmp	R0, #2
+	blos	10$
+08$:	add	#12., R4			; else skip 12. bytes for guard record
+	jmp	GProcEnd			; and continue cycle
+10$:	; end checking Y distance
+
+	; check guard distance by X
+	clr	R0
+	bisb	2(R4), R0			; guard's roomX
+	movb	RoomX, R1			; Nina's roomX
+	sub	R1, R0				; distance by X
+	bis	R0, GrdSameRoom			; add to same room flag
+	add	#2, R0				; blaire: was 6 - way toooooooo much
+	cmp	R0, #4.				; so I decreased it
+	bhi	08$
+
+	; something I dunno ...
 	MOV	#7, R1
 	MOVB	#6, K01604
 	MOVB	13(R4), R0
@@ -3116,37 +3257,68 @@ K25556:	CALL	K36072				; G1DI2
 	ADD	#3, R3
 	MOV	R3, K47720
 	MOV	R3, K55316
-	MOVB	RoomY, R1			; get RMDN room level
-	MOVB	(R4), R0
-	BIC	#177600, R0
-	CMPB	R0, R1
-	BNE	K25646
-	CMPB	RoomX, 2(R4)			; check RMAC
-	BNE	K25646				; => NDRGA
-	;
-	CALL	PrepManBf
-	CALL	K36112
-	CALL	PrepDraBuf
+
+;	; are guard in a current room?
+;	MOVB	RoomY, R1			; get RMDN room level
+;	MOVB	(R4), R0
+;	BIC	#177600, R0
+;	CMPB	R0, R1
+;	BNE	GrdChkNearY
+;	CMPB	RoomX, 2(R4)			; check RMAC
+;	BNE	GrdChkNearY			; => NDRGA
+
+	; do we really need that?
+;	CALL	PrepManBf
+;	CALL	K36112
+;	CALL	PrepDraBuf
 	;
 
+; nah already filtered
 ; NDRGA:
-K25646:	MOVB	RoomY, R1			; get RMDN room level
-	MOVB	(R4), R0
-	BIC	#177600, R0
-	SUB	R1, R0
-	ADD	#3, R0
-	CMPB	R0, #6
-	BLO	K25700
-	JMP	K30606
-K25700:	MOVB	RoomX, R0			; get RMAC
-	CLR	R5
-	BISB	2(R4), R5
-	SUB	R5, R0
-	ADD	#6, R0
-	CMPB	R0, #14
-	BLO	K25732
-	JMP	K30606
-K25732:	CMPB	13(R4), #2
+;GrdChkNearY:
+;	MOVB	RoomY, R1			; get RMDN room level
+;	MOVB	(R4), R0
+;	BIC	#177600, R0
+;	SUB	R1, R0
+;	ADD	#3, R0
+;	CMPB	R0, #6
+;	BLO	GrdChkNearX
+;	JMP	K30606
+
+;	; check guard distance by X
+;	clr	R0
+;	bisb	2(R4), R0			; guard's roomX
+;	movb	RoomX, R1			; Nina's roomX
+;	sub	R1, R0				; distance by X
+;	bis	R0, GrdSameRoom			; add to same room flag
+;	add	#2, R0				; blaire: was 6 - way toooooooo much
+;	cmp	R0, #4.				; so I decreased it
+;	blos	20$
+;	jmp	K30606
+;20$:	; end checking X distance
+
+	; check if we are in a same room with guard
+	tst	GrdSameRoom			; 0 - same room, else not
+	bne	30$
+GrdAClrBuf =: .+2
+	inc	#177777				; we need to clear their both buffers just once
+	bne	30$
+	call	ClearBuffGuards			; clear both buffG1 buffG2 buffers
+30$:	; end check same room
+
+;	; check them dead already 11.(R4) = 5?
+;	cmpb	11.(R4), #5
+;	bne	48$				; still alive
+;	; jump depends if it on screen (same room)
+;	tst	GrdSameRoom
+;	beq	46$
+;	add	#12., R4
+;	jmp	GProcEnd
+;46$:	jmp	K30310
+;48$:	; end dead men checks	
+
+	; dunno
+	cmpb	11.(R4), #2
 	BLO	K25746
 	JMP	K26310
 K25746:	MOVB	1(R4), R1
@@ -3254,7 +3426,7 @@ K26376:	MOV	#K26672, R3			; GDHIT address
 	BEQ	K26546				; => NGDHT
 	MOV	#2, R1				; 2.
 	CALL	L10244				; MONUP
-	call	Sound2
+	mov	#Snd006, SoundCur
 	MOV	#K26666, R3
 	DECB	(R3)
 	BEQ	K26464				; CRUSN
@@ -3391,8 +3563,11 @@ K27136:	MOV	#K36211, R3			; MAND
 	DEC	R3
 
 ; GTROK:
-K27316:	MOVB	K36264, R0			; get DIR
-	CMPB	R0, K01607
+K27316:
+;	MOVB	K36264, R0			; get DIR
+;	CMPB	R0, K01607
+	cmpb	K36264, K01607
+;
 	BNE	K27454
 	MOVB	1(R4), R0
 	MOVB	K01605, K36202
@@ -3436,27 +3611,27 @@ K27504:	MOVB	ManBf+15., R0
 K27552:	CALL	K27566				; TURNQ
 K27556:	MOV	#000000, R3
 	JMP	K30450				; => ENDGP
+
 ; TURNQ procedure
 K27566:	CALL	Random				; Get random number
 	BIC	#177774, R0			; 0..3
-	BEQ	K27602
+	BEQ	10$
 	RETURN
-
-K27602:	MOVB	K36210, R0			; get MANA
+10$:	MOVB	K36210, R0			; get MANA
 	ADD	#4, R0
 	MOVB	1(R4), R5
 	SUB	R5, R0
 	MOV	#1, R1
 	SUB	#4, R0
 	TSTB	R0
-	BMI	K27636
+	BMI	20$
 	DECB	R1
 ; TRNLF:
-K27636:	MOVB	K36264, R0			; get DIR
+20$:	MOVB	K36264, R0			; get DIR
 	CMPB	R0, R1
-	BNE	K27650
+	BNE	30$
 	RETURN
-K27650:	MOVB	13(R4), R0
+30$:	MOVB	13(R4), R0
 	ASL	R0
 	ADD	#7, R0
 	MOVB	R0, 13(R4)
@@ -3471,7 +3646,7 @@ K27670:	MOV	#K26670, R3
 	MOVB	(R3), R0
 	INCB	R0
 	BEQ	K27732
-	CALL	L15650				; Sound CRUNCH noise
+	mov	#Snd002, SoundCur		; guard punch
 	MOVB	#14, R1
 	CALL	Decen				; DECEN
 ; NUN52:
@@ -3490,9 +3665,6 @@ K27754:	.BYTE	243, 244
 	.BYTE	244, 244
 	.BYTE	244, 244
 	.BYTE	244, 245
-
-; RND procedure
-K27766:	jmp	Random
 
 ; GDFFP:
 K30014:	mov	#BuffG1+102., R2		; BUFG1+102.
@@ -3572,7 +3744,7 @@ K30324:	MOV	#K26670, R3
 	MOVB	(R3), R0
 	INCB	R0
 	BEQ	K30366
-	CALL	L15650				; Sound CRUNCH noise
+	mov	#Snd001, SoundCur		; guard kick
 	MOV	#7, R1
 	CALL	Decen				; DECEN
 
@@ -3589,11 +3761,12 @@ K30406:	MOVB	#3, 13(R4)
 	MOV	#K76657, R3			; GDLLC
 	BR	K30450
 
-K30422:	CALL	L15650				; Sound CRUNCH noise
+K30422:	mov	#Snd000, SoundCur
 	MOVB	#6, R1				; 6.
 	CALL	Decen				; DECEN
 	MOVB	#1, 13(R4)
 	MOV	#K76757, R3			; DOGL2
+
 ; ENDGP:
 K30450:	MOV	R3, K30534+2
 	MOV	#Guard1Dir, R3
@@ -3681,17 +3854,20 @@ K30756:	MOV	#K36212, R3			; MANPS address
 	MOVB	#32, R0
 	MOVB	R0, K55446
 	MOVB	R0, K55432
+
+GProcEnd:
 	POP	R1
-	DECB	R1
-	BEQ	K31116
-	JMP	K25454				; => NXGRD
-K31116:	CLRB	K26672				; clear GDHIT
+	DEC	R1
+	BEQ	10$
+	JMP	GProcStart			; => NXGRD
+
+10$:	CLRB	K26672				; clear GDHIT
+
+	; DEBUG TIMER
+	mov	@#177710, Timer2
+	mov	#20, @#177712
 
 	; treasure chest flashing attrs (removed)
-
-	; DEBUG
-	mov	@#177710, Timer1
-	mov	#20, @#177712
 
 ; animate fence electric sparks
 K31212:	MOV	RoomAddr, R3			; get (RM+1)
@@ -3748,7 +3924,7 @@ K31360:	MOV	RoomAddr, R3			; get (RM+1)
 	JMP	K31712				; => MISGO
 
 ; BATSI:
-K31430:	CALL	K27766				; RND
+K31430:	call	Random				; RND
 	BIC	#177700, R0			; 0..63.
 	INCB	R0
 	CMPB	R0, #5				; 5.
@@ -3764,14 +3940,14 @@ K31454:	ADD	#7, R3
 	CLRB	(R3)+
 	MOVB	#40, (R3)+
 	MOVB	#1, (R3)+
-	CALL	K27766				; RND
+	call	Random				; RND
 	BIC	#177770, R0
 	ASL	R0
 	MOV	#K26700, R4
 	ADD	R0, R4
 	MOVB	(R4), (R3)+
 	MOVB	1(R4), (R3)
-	CALL	K27766				; RND
+	call	Random				; RND
 	BIC	#177776, R0
 	BEQ	K31626
 	MOV	#14, R0
@@ -3892,16 +4068,16 @@ K32300:	.WORD	0				; MSLNO
 
 K32302:	SUB	#2200, R3
 	CMPB	K32300, #6			; MSLNO == 6. ?
-	BEQ	K32350
+	BEQ	10$
 	CMPB	(R3), #340
-	BHIS	K32350
+	BHIS	10$
+	mov	#Snd005, SoundCur		; hit by missile sound
 	MOV	#5, R1
 	CALL	Decen				; DECEN
-	CALL	L15650				; Sound CRUNCH noise
 	CMPB	(R4), #340
 	BLO	K32102
 	BR	K32364
-K32350:	MOVB	6(R4), R5
+10$:	MOVB	6(R4), R5
 	DECB	R1
 	BEQ	K32364
 	JMP	K32000
@@ -3949,18 +4125,18 @@ K32542:	TSTB	K14640				; do we have TV in the room?
 	MOV	#K14641, R4			; TVCNT
 	DECB	(R4)
 	BNE	K32612
-	CALL	K27766				; RND2
+	call	Random				; RND2
 	MOVB	R0, (R4)
 	BIC	#177774, R0
 	BNE	K32624
-	CALL	K27766				; RND2
+	call	Random				; RND2
 	BIC	#177774, R0
 	ADD	#4, R0
 	BR	K32650
 K32612:	MOVB	1(R4), R0
 	BIT	#4, R0				; bit 2 ?
 	BNE	K32650
-K32624:	CALL	K27766				; RND2
+K32624:	call	Random				; RND2
 	BIC	#177774, R0
 	CMPB	R0, 1(R4)
 	BNE	K32650
@@ -4016,9 +4192,6 @@ SetTermColor:
 ; OK, draw screen then
 ;
 DoPic1:
-	; DEBUG
-	mov	@#177710, Timer2
-	mov	#20, @#177712
 
 ; //////////////////////////////////////////////////////////////////////////////
 ; // MainCycle ends 
@@ -4026,7 +4199,7 @@ DoPic1:
 
 	CALL	DrawScreen			; DOPIC - Show the room on the screen
 
-	; DEBUG
+	; DEBUG TIMER
 	mov	@#177710, Timer3
 	mov	#20, @#177712
 
@@ -5056,7 +5229,7 @@ UseTerminal:
 	beq	10$
 	jmp	K25276
 10$:	inc	UseTerminal+2
-	call	SoundConsole
+	mov	#Snd004, SoundCur		; console use sound
 	MOV	RoomAddr, R3			; get (RM+1)
 	CMPB	(R3), #075			; room type == $3D ?
 	BEQ	K52446				; yes => K2DAQ
@@ -5441,9 +5614,10 @@ K54440:	.ASCII	/@MISSION@TERMINATED@/
 K54464:	.ASCII	/@@MISSION@@FAILURE@@/
 
 ; HIGHT:
+; dropped on the floor
 K54510:	MOV	#1, R1				; 1.
 	CALL	Decen				; DECEN
-	CALL	L15650				; Sound CRUNCH noise
+	mov	#Snd003, SoundCur
 	JMP	K50744				; => SETCR
 
 ; HJRRF:
@@ -5701,8 +5875,6 @@ L15506:	MOV	#000372, R1			; 250.
 
 L15646:	.WORD	0				; RMTIME
 
-; sound procedure
-L15650:	jmp	Sound2
 
 ; background tiles addrs
 BackTilesTbl:

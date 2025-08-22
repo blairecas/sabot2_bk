@@ -962,6 +962,7 @@ DrawScrWord:
 TBufBgr:
 	clr	R1
 	bisb	BuffB-BuffD(R5), R1		; get tile from BUFFB: Back tile screen
+	mov	R1, R2
 	movb	ElectroTbl(R1), NinaCanShock	; Nina can be shocked with some background
 	asl	R1
 	mov	BackTilesTbl(R1), R1
@@ -972,6 +973,10 @@ TBufBgr:
 	mov	(R1)+, (R3)+
 	mov	(R1)+, (R3)+
 	mov	(R1)+, (R3)+			; last byte is attr
+	; check if we need to go further - some tiles are counted as foreground
+	cmp	R2, #361
+	blo	TBufGuard1
+	jmp	TBufOut
 
 ; guard 1
 TBufGuard1:

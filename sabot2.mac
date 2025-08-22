@@ -34,12 +34,15 @@ START:	mov	#1000, SP
 	; loading with BOS BK0011M tape loader
 	mov	#B11TapeArea, R0
 	emt	115
+	call	PrintOvl
 	incb	B11Ram
 	incb	OvlFnm+9.
 	emt	115
+	call	PrintOvl
 	movb	#6, B11Ram
 	movb	#'6, OvlFnm+9.
 	emt	115
+	call	PrintOvl
 	br	StartPrepare
 
 ; load game files under andos (it's using old BK0010 EMT's)
@@ -110,7 +113,15 @@ LoadOver:
 	; check for error
 	tstb	@#321
 	bne	ReadError
-	return
+	; print fname
+PrintOvl:
+	mov	#C_RAM_BANKS54, @#177716
+	mov	#OvlFnm+16., R1
+	mov	#MsgOvl+16., R0
+	mov	#16., R3
+	movb	-(R1), -(R0)
+	sob	R3, .-2
+	br	PrintEmt
 
 ; copy file name for emt
 CopyName:
@@ -149,7 +160,8 @@ CheckStdRom:
 
 MsgEr0:	.asciz	<12><15>"This game is for BK0011M"
 MsgEr1:	.asciz	<12><15>"Unable to load game files"
-MsgLoa:	.asciz	<12><15>"Loading ..."
+MsgLoa:	.asciz	<12><15>"Loading ..."<12><15>
+MsgOvl:	.asciz	"                "<12><15>
 	.even
 
 ; this is for loading from tape on BK0011M without andos

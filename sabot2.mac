@@ -83,6 +83,7 @@ StartPrepare:
 	; DEBUG
 
 	; set joystick bad bits
+	clr	@#177714			; turn off mouse?
 	clr	JoyBadBits
 	clr	R0
 	bis	@#177714, JoyBadBits

@@ -188,9 +188,10 @@ Timer3:		.word	0
 
 BackupVals:	.blkw	5
 
-JoyCur:		.byte	0
-JoyUsed:	.byte	0
+JoyCur:		.word	0
+JoyUsed:	.word	0
 JoyBadBits:	.word	0
+JoyWasRedef:	.word	0
 
 PpuKeys:	.word	0
 FramesCount:	.word	0
@@ -504,7 +505,9 @@ PrepareBank3:
 ; main keys interrupt
 KeyInt:	mov	R0, -(SP)
 	mov	@#177662, R0
-	tstb	JoyUsed				; do not use keyboard if we already used joystick
+	mov	R0, (PC)+
+KeyCur:	.word	0
+	tst	JoyUsed				; do not use keyboard if we already used joystick
 	bne	90$
 	cmp	R0, #C_KEY_LEFT
 	bne	10$
@@ -533,7 +536,7 @@ KeyInt:	mov	R0, -(SP)
 KeyFuncInt:
 	mov	R0, -(SP)
 	mov	@#177662, R0
-	tstb	JoyUsed				; do not use keyboard if we already used joystick
+	tst	JoyUsed				; do not use keyboard if we already used joystick
 	bne	90$
 	cmp	R0, #C_KEY_LEFT
 	bne	10$
@@ -555,18 +558,31 @@ VsyGme:	.word	0
  	inc	(PC)+
 VsyCnt:	.word	0
 	mov	R0, -(SP)
-	; set keys from joystick
+	mov	R1, -(SP)
+	mov	R2, -(SP)
+	; set keys from joystick (but not in joy setup)
+	tst	IsJoySetup
+	bne	10$
 	mov	@#177714, R0			; get joy bits
 	bic	JoyBadBits, R0			; clear bad ones
-	cmpb	R0, JoyCur
+	; if we redefined joy bits - set them 
+	clr	R2
+	mov	#JoyReTable, R1
+02$:	bit	R0, (R1)+
+	beq	04$
+	bis	(R1), R2
+04$:	tst	(R1)+
+	cmp	R1, #JoyReTableEnd
+	blo	02$
+	; ok then
+	cmp	R2, JoyCur
 	beq	10$
-	movb	R0, JoyCur
-	bisb	R0, PpuKeys
-	movb	#1, JoyUsed
+	mov	R2, JoyCur
+	bis	R2, PpuKeys
+	mov	#1, JoyUsed
 10$:	; check sound
 	mov	SoundCur, R0
 	beq	80$
-	mov	R1, -(SP)
 	clr	R1
 30$:	bisb	(R0)+, R1
 	beq	40$				; end of sound	
@@ -585,15 +601,118 @@ VsyCnt:	.word	0
 	br	30$
 40$:	clr	R0
 50$:	mov	R0, SoundCur
-	mov	(SP)+, R1
 	; end of sound
 80$:	; check for 10-sec
 	cmp	VsyCnt, #500.
 	blo	VsyRti
 	inc	FpsOutput+2			; flag to draw fps
 	clr	VsyCnt	
-VsyRti:	mov	(SP)+, R0
+VsyRti:	mov	(SP)+, R2
+	mov	(SP)+, R1
+	mov	(SP)+, R0
 	rti
+
+
+IsJoySetup:	.word	0
+JoyReTable:	.word	P_KEY_UP,    P_KEY_UP
+JoyReTableR:	.word	P_KEY_RIGHT, P_KEY_RIGHT
+JoyReTableD:	.word	P_KEY_DOWN,  P_KEY_DOWN
+JoyReTableL:	.word	P_KEY_LEFT,  P_KEY_LEFT
+JoyReTableF:	.word	P_KEY_FIRE,  P_KEY_FIRE
+JoyReTableEnd:
+MsgJoy000:	.asciz	"JOYSTICK SETUP"
+MsgJoy001:	.asciz	"PRESS ANY KEY TO USE DEFAULTS"
+MsgJoy002:	.asciz	"PRESS UP"
+MsgJoy003:	.asciz	"PRESS RIGHT"
+MsgJoy004:	.asciz	"PRESS DOWN"
+MsgJoy005:	.asciz	"PRESS LEFT"
+MsgJoy006:	.asciz	"PRESS FIRE"
+		.even
+
+; setup joy redefine table (if user want so, doing that only once)
+JoySetup:
+	inc	IsJoySetup
+	mov	#MsgJoy000, R3
+	call	PrinSP
+	.word	000001
+	mov	#MsgJoy001, R3
+	call	PrinSP
+	.word	000041				; Y5 Y4  Y3 X4 X3  X2 X1 X0
+	; for double press detection
+JoyTempDD =: .+2
+	clr	#000000
+	; up
+	mov	#MsgJoy002, R3
+	call	PrinSP
+	.word	000141
+	mov	#JoyReTable, R0
+	call	SetJoyKey
+	; right
+	mov	#MsgJoy003, R3
+	call	PrinSP
+	.word	000201
+	mov	#JoyReTableR, R0
+	call	SetJoyKey
+	; down
+	mov	#MsgJoy004, R3
+	call	PrinSP
+	.word	000241
+	mov	#JoyReTableD, R0
+	call	SetJoyKey
+	; left
+	mov	#MsgJoy005, R3
+	call	PrinSP
+	.word	000301
+	mov	#JoyReTableL, R0
+	call	SetJoyKey
+	; fire
+	mov	#MsgJoy006, R3
+	call	PrinSP
+	.word	000341
+	mov	#JoyReTableF, R0
+	call	SetJoyKey
+	clr	IsJoySetup	
+	return
+
+; wait for joy input (or keypress)
+; R0 - where to put it
+SetJoyKey:
+	clr	PpuKeys
+	mov	JoyTempDD, R2
+	; wait for press
+10$:	bit	#100, @#177716
+	beq	90$
+	mov	@#177714, R1
+	bic	JoyBadBits, R1
+	beq	10$
+	; check for double press
+	bis	R1, R2
+	cmp	JoyTempDD, R2
+	beq	10$
+	; update JoyReTable
+	mov	R1, (R0)
+	; wait for release
+20$:	bit	#100, @#177716
+	beq	90$
+	mov	@#177714, R1
+	bic	JoyBadBits, R1
+	bne	20$
+	mov	R2, JoyTempDD
+	return
+90$:	; restore defaults
+	mov	#JoyReTable, R0
+	mov	#P_KEY_UP, (R0)+
+	tst	(R0)+
+	mov	#P_KEY_RIGHT, (R0)+
+	tst	(R0)+
+	mov	#P_KEY_DOWN, (R0)+
+	tst	(R0)+
+	mov	#P_KEY_LEFT, (R0)+
+	tst	(R0)+
+	mov	#P_KEY_FIRE, (R0)+
+	tst	(SP)+				; remove call
+	clr	IsJoySetup
+	return					; return from routine above
 
 
 ; EXX procedure R1 R2 R3 <-> R1' R2' R3'
@@ -691,7 +810,9 @@ PrintStr:
 	push	R4
 	push	R5
 	call	ScrToVaddr			; screen coords R2 to screen address
+PrintStrVaddr:
 10$:	movb	(R3)+, R0			; string chars are < 128.
+	beq	90$				; exit from zero terminated, screw R1
 	asl	R0
 	asl	R0
 	asl	R0				; *8 bytes
@@ -706,7 +827,7 @@ PrintStr:
 	mov	#C_RAM_BANKS12, @#177716
 	sub	#8.*C_SCRWID-2, R2		; advance vaddr
 	sob	R1, 10$
-	pop	R5
+90$:	pop	R5
 	pop	R4
 	pop	R2
 	return
@@ -915,9 +1036,9 @@ EnergyUp:
 
 DrawScreen:
 	; process keys related here
-	tstb	JoyUsed
+	tst	JoyUsed
 	beq	10$
-	movb	JoyCur, PpuKeys
+	mov	JoyCur, PpuKeys
 	bit	#P_KEY_FIRE, JoyCur
 	beq	18$
 	br	20$
@@ -1840,13 +1961,25 @@ CoreStart:
 	mov	#Music1, R0
 	clr	R1
 	call	Pt3Init
+	clr	KeyCur
 	clr	PpuKeys
-	clr	JoyCur				; (!) WORD, also clears JoyUsed
+	clr	JoyCur
+	clr	JoyUsed
 10$:	clr	VsyCnt
 	call	Pt3Play
 	tst	VsyCnt
 	beq	.-4
-	tstb	PpuKeys
+	; maybe joy setup
+	cmp	KeyCur, #'J
+	bne	12$
+	clr	wTitle
+	call	Pt3Mute
+	call	FadeScreen
+	call	PrepareBank3
+	call	JoySetup
+	jmp	CoreStart
+	; joy setup ends
+12$:	tst	PpuKeys
 	beq	10$
 	clr	PpuKeys
 	call	Pt3Mute

@@ -1036,18 +1036,6 @@ EnergyUp:
 ; BuffD bytes: 2 (draw) -> 1 (still draw) -> 0 (do not draw)
 
 DrawScreen:
-	; process keys related here
-	tst	JoyUsed
-	beq	10$
-	mov	JoyCur, PpuKeys
-	bit	#P_KEY_FIRE, JoyCur
-	beq	18$
-	br	20$
-10$:	bit	#100, @#177716			; any key pressed?
-	beq	20$				; yes
-	clr	PpuKeys				; else clear keys variable
-18$:	clr	UseTerminal+2			; allow use terminal after 'all buttons up'
-20$:	; draw then
 	inc	FramesCount
 	clr	NinaOnFire
 	clr	NinaCanShock
@@ -1098,7 +1086,7 @@ TBufBgr:
 	; check if we need to go further - some tiles are counted as foreground
 	cmp	R2, #361
 	blo	TBufGuard1
-	jmp	TBufOut
+	jmp	TBufFore
 
 ; guard 1
 TBufGuard1:
@@ -1114,7 +1102,7 @@ TBufGuard1:
 	asl	R1
 	asl	R1
 	asl	R1
-10$:	add	#120000-16., R1			; use RAM bank 7 second half and compensate for +1
+10$:	add	#120000-16., R1			; use RAM bank 6 second half and compensate for +1
 	tstb	Guard1Dir
 	beq	20$
 	add	#10000, R1
@@ -1139,7 +1127,7 @@ TBufGuard2:
 	asl	R1
 	asl	R1
 	asl	R1
-10$:	add	#120000-16., R1			; use RAM bank 7 second half and compensate for +1
+10$:	add	#120000-16., R1			; use RAM bank 6 second half and compensate for +1
 	tstb	Guard2Dir
 	beq	20$
 	add	#10000, R1
@@ -3302,6 +3290,19 @@ MainCycle:
 	blo	.-6
 	clr	VsyGme
 
+	; process keys related here
+	tst	JoyUsed
+	beq	10$
+	mov	JoyCur, PpuKeys
+	bit	#P_KEY_FIRE, JoyCur
+	beq	18$
+	br	20$
+10$:	bit	#100, @#177716			; any key pressed?
+	beq	20$				; yes
+	clr	PpuKeys				; else clear keys variable
+18$:	clr	UseTerminal+2			; allow use terminal after 'all buttons up'
+20$:	; end process keys
+
 	; DEBUG timer start
 	mov	#20, @#177712
 
@@ -4397,26 +4398,18 @@ DoPic1:
 ; // MainCycle ends 
 ; //////////////////////////////////////////////////////////////////////////////
 
-	CALL	DrawScreen			; DOPIC - Show the room on the screen
-
 	; DEBUG TIMER
 	mov	@#177710, Timer3
 	mov	#20, @#177712
 
+	CALL	DrawScreen			; DOPIC - Show the room on the screen
+
 	TSTB	K36216				; check ELECU
 	BEQ	K33052
-
-; electrocuted?
-; NICK2: Set Ninja to random color, but not blue or green
-; not implemented
-K33012:	CALL	Random				; Get random number
-	BIC	#177770, R0			; 0..7
-	CMPB	R0, #1				; == 1 blue ?
-	BEQ	K33012				; yes => again
-	CMPB	R0, #4				; == 4 green ?
-	BEQ	K33012				; yes => again
+	; electrocuted
 	MOV	#000024, R1			; 20.
 	CALL	Decen				; DECEN
+
 ; NICK:
 K33052:	TSTB	K33540				; check DEAD
 K33056:	BEQ	K33114				; alive =>

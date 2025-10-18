@@ -4,8 +4,12 @@ Enhanced, playable etc..<br />
 Escape from the building to beat it<br />
 Addition: Rocket CAN be launched with 10 or more punched tapes ^_^<br />
 <br />
-Release Andos image: [release/andos.img](/release/andos.img?raw=true)<br />
+Release Andos image: [release/andos_sabot2.img](/release/andos_sabot2.img?raw=true)<br />
 <br />
 Also there are binary and .wav files in release folder.<br />
 For using tape loader on BK0011M hold KT after reset to get into monitor.<br />
-Then as usual L enter - load sabot2.wav from your 'tape recorder', after that stop it, launch first binary with G. Then play other ov1, ov2, ov6.wav's.
+Then as usual L enter - load sabot2.wav from your 'tape recorder', after that stop it, launch first binary with G. Then play other ov1, ov2, ov6.wav's.<br />
+<br />
+![Screenshot 1](/graphics/sabot2_bk_1.png?raw=true)<br />
+<br />
+![Screenshot 1](/graphics/sabot2_bk_2.png?raw=true)<br />

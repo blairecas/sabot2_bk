@@ -19,14 +19,14 @@ move /y _%NAME%.bin.ov1 release\sabot2.ov1 >NUL
 move /y _%NAME%.bin.ov2 release\sabot2.ov2 >NUL
 
 rem -- put to disk --
-..\scripts\bkdecmd d ./release/andos.img sabot2 >NUL
-..\scripts\bkdecmd d ./release/andos.img sabot2.ov1 >NUL
-..\scripts\bkdecmd d ./release/andos.img sabot2.ov2 >NUL
-..\scripts\bkdecmd d ./release/andos.img sabot2.ov6 >NUL
-..\scripts\bkdecmd a ./release/andos.img ./release/sabot2.bin >NUL
-..\scripts\bkdecmd a ./release/andos.img ./release/sabot2.ov1 >NUL
-..\scripts\bkdecmd a ./release/andos.img ./release/sabot2.ov2 >NUL
-..\scripts\bkdecmd a ./release/andos.img ./release/sabot2.ov6 >NUL
+..\scripts\bkdecmd d ./release/andos_sabot2.img sabot2 >NUL
+..\scripts\bkdecmd d ./release/andos_sabot2.img sabot2.ov1 >NUL
+..\scripts\bkdecmd d ./release/andos_sabot2.img sabot2.ov2 >NUL
+..\scripts\bkdecmd d ./release/andos_sabot2.img sabot2.ov6 >NUL
+..\scripts\bkdecmd a ./release/andos_sabot2.img ./release/sabot2.bin >NUL
+..\scripts\bkdecmd a ./release/andos_sabot2.img ./release/sabot2.ov1 >NUL
+..\scripts\bkdecmd a ./release/andos_sabot2.img ./release/sabot2.ov2 >NUL
+..\scripts\bkdecmd a ./release/andos_sabot2.img ./release/sabot2.ov6 >NUL
 
 rem -- make wave's
 php -f ../scripts/bin2wav.php ./release/sabot2.bin
